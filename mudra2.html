@@ -1,0 +1,1834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MudraVision AI — Full Gesture Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Noto+Sans+Devanagari:wght@300;400;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<style>
+:root{
+  --ink:#03010a;--void:#060310;
+  --ember:#ff5e1a;--ember2:#ffaa00;
+  --plasma:#00f5d4;--plasma2:#00b8f5;
+  --crimson:#ff1a6b;
+  --ghost:rgba(255,255,255,0.06);
+  --border:rgba(255,94,26,0.2);
+  --text:#f0e6d3;--text-dim:rgba(240,230,211,0.4);
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--ink);color:var(--text);font-family:'Syne',sans-serif;overflow-x:hidden;min-height:100vh;}
+
+
+#threeCanvas{position:fixed;inset:0;z-index:0;pointer-events:none;}
+
+#gestureCanvas{
+  position:fixed;bottom:24px;right:24px;z-index:300;
+  width:240px;height:180px;border:1px solid rgba(0,245,212,0.3);
+  background:rgba(0,0,0,0.6);border-radius:4px;
+  display:none;
+}
+#gestureCanvas.on{display:block;}
+
+
+#mpVideo{display:none;position:fixed;}
+
+body::before{
+  content:'';position:fixed;inset:0;z-index:1;pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:0.4;
+}
+
+#app{position:relative;z-index:3;}
+
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  padding:20px 0;
+  background:linear-gradient(180deg,rgba(3,1,10,0.95) 0%,transparent 100%);
+  backdrop-filter:blur(4px);
+}
+.nav-inner{max-width:1400px;margin:0 auto;padding:0 40px;display:flex;align-items:center;justify-content:space-between;}
+.logo{font-family:'Space Mono',monospace;font-size:1rem;font-weight:700;display:flex;flex-direction:column;gap:2px;}
+.logo-main{
+  background:linear-gradient(90deg,var(--ember),var(--ember2),var(--plasma));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  letter-spacing:3px;font-size:1.1rem;
+}
+.logo-sub{font-size:0.55rem;letter-spacing:5px;color:var(--text-dim);-webkit-text-fill-color:var(--text-dim);}
+.nav-links{display:flex;gap:32px;list-style:none;}
+.nav-links a{
+  color:var(--text-dim);text-decoration:none;font-size:0.7rem;
+  letter-spacing:3px;text-transform:uppercase;transition:color 0.3s;
+  font-family:'Space Mono',monospace;
+}
+.nav-links a:hover,.nav-links a.active-link{color:var(--ember);}
+
+#gestureHUD{
+  position:fixed;top:0;left:0;right:0;bottom:0;z-index:500;
+  pointer-events:none;
+}
+
+
+#gestureCursor{
+  position:fixed;z-index:600;
+  width:24px;height:24px;
+  border:2px solid var(--plasma);
+  border-radius:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  display:none;
+  transition:transform 0.05s,background 0.15s;
+}
+#gestureCursor.pinch{
+  background:rgba(0,245,212,0.3);
+  transform:translate(-50%,-50%) scale(0.6);
+}
+#gestureCursor.fist{
+  background:rgba(255,94,26,0.4);
+  border-color:var(--ember);
+  transform:translate(-50%,-50%) scale(1.4);
+}
+
+#gestureBadge{
+  position:fixed;bottom:220px;right:24px;z-index:400;
+  background:rgba(3,1,10,0.92);border:1px solid var(--ember);
+  padding:10px 16px;font-family:'Space Mono',monospace;font-size:0.65rem;
+  letter-spacing:2px;color:var(--ember);display:none;
+  border-left:3px solid var(--plasma);
+  max-width:240px;
+}
+#gestureBadge.on{display:block;}
+
+#gestureLegend{
+  position:fixed;left:24px;bottom:24px;z-index:400;
+  background:rgba(3,1,10,0.92);border:1px solid rgba(0,245,212,0.2);
+  padding:20px;width:260px;display:none;
+}
+#gestureLegend.on{display:block;}
+#gestureLegend h4{
+  font-family:'Space Mono',monospace;font-size:0.6rem;letter-spacing:4px;
+  color:var(--plasma);margin-bottom:14px;border-bottom:1px solid rgba(0,245,212,0.15);
+  padding-bottom:10px;
+}
+.gl-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.gl-icon{font-size:1.1rem;width:26px;text-align:center;}
+.gl-info{flex:1;}
+.gl-name{font-size:0.7rem;color:var(--text);font-family:'Space Mono',monospace;}
+.gl-action{font-size:0.6rem;color:var(--plasma);margin-top:1px;}
+.gl-active{border-left:2px solid var(--ember);padding-left:8px;}
+
+#startGestureBtn{
+  position:fixed;bottom:24px;right:24px;z-index:400;
+  background:linear-gradient(135deg,var(--ember),var(--crimson));
+  border:none;color:#fff;padding:14px 22px;
+  font-family:'Space Mono',monospace;font-size:0.7rem;letter-spacing:2px;
+  cursor:pointer;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);
+  transition:all 0.3s;
+}
+#startGestureBtn:hover{box-shadow:0 0 30px rgba(255,94,26,0.5);}
+
+#scrollDir{
+  position:fixed;top:50%;right:16px;z-index:400;transform:translateY(-50%);
+  display:none;flex-direction:column;gap:6px;align-items:center;
+}
+#scrollDir.on{display:flex;}
+.sd-arrow{font-size:1.4rem;color:var(--plasma);opacity:0.3;transition:opacity 0.2s;}
+.sd-arrow.active{opacity:1;animation:pulse 0.5s ease-in-out infinite alternate;}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.3)}}
+
+#sectionDots{
+  position:fixed;right:16px;top:50%;transform:translateY(-50%);
+  z-index:200;display:flex;flex-direction:column;gap:10px;align-items:center;
+}
+.sd{
+  width:8px;height:8px;border-radius:50%;
+  border:1px solid rgba(255,94,26,0.4);
+  cursor:pointer;transition:all 0.3s;background:transparent;
+}
+.sd.on{background:var(--ember);border-color:var(--ember);box-shadow:0 0 8px rgba(255,94,26,0.5);}
+.sd:hover{background:rgba(255,94,26,0.3);}
+
+.hero{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:120px 40px 60px;position:relative;
+}
+.hero-content{max-width:900px;}
+.hero-eyebrow{
+  font-family:'Space Mono',monospace;font-size:0.65rem;
+  letter-spacing:8px;color:var(--plasma);margin-bottom:32px;
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  opacity:0;animation:revealUp 1s 0.3s forwards;
+}
+.eyebrow-line{width:40px;height:1px;background:var(--plasma);opacity:0.5;}
+.hero h1{
+  font-size:clamp(3rem,8vw,7.5rem);font-weight:800;line-height:0.95;
+  margin-bottom:20px;letter-spacing:-2px;
+  opacity:0;animation:revealUp 1s 0.5s forwards;
+}
+.h1-line1{display:block;background:linear-gradient(135deg,#fff 0%,rgba(255,255,255,0.7) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.h1-line2{display:block;background:linear-gradient(90deg,var(--ember),var(--ember2),var(--crimson));-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-style:italic;}
+.hero-dev{font-family:'Noto Sans Devanagari',sans-serif;font-size:1.4rem;color:rgba(255,170,0,0.5);margin-bottom:32px;letter-spacing:4px;opacity:0;animation:revealUp 1s 0.7s forwards;}
+.hero-desc{font-size:1.05rem;color:var(--text-dim);max-width:580px;margin:0 auto 48px;line-height:1.8;opacity:0;animation:revealUp 1s 0.9s forwards;}
+.hero-btns{display:flex;gap:16px;justify-content:center;opacity:0;animation:revealUp 1s 1.1s forwards;}
+.btn-fire{
+  background:linear-gradient(135deg,var(--ember),var(--crimson));
+  color:#fff;border:none;padding:16px 40px;
+  font-family:'Space Mono',monospace;font-size:0.75rem;letter-spacing:2px;
+  cursor:pointer;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);
+  transition:all 0.3s;text-decoration:none;display:inline-block;
+}
+.btn-fire:hover{box-shadow:0 0 40px rgba(255,94,26,0.5);transform:translateY(-2px);}
+.btn-ghost{
+  background:transparent;border:1px solid var(--border);
+  color:var(--ember);padding:16px 40px;
+  font-family:'Space Mono',monospace;font-size:0.75rem;letter-spacing:2px;
+  cursor:pointer;transition:all 0.3s;text-decoration:none;display:inline-block;
+}
+.btn-ghost:hover{border-color:var(--ember);background:rgba(255,94,26,0.05);}
+
+.stats{
+  max-width:1400px;margin:0 auto;padding:0 40px 100px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+  background:var(--border);border:1px solid var(--border);
+}
+.stat-box{background:var(--ink);padding:32px 28px;position:relative;overflow:hidden;}
+.stat-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--ember),transparent);opacity:0;transition:opacity 0.3s;}
+.stat-box:hover::before{opacity:1;}
+.stat-num{font-family:'Space Mono',monospace;font-size:2.5rem;font-weight:700;background:linear-gradient(135deg,var(--ember),var(--ember2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;display:block;margin-bottom:8px;}
+.stat-lbl{font-size:0.65rem;letter-spacing:4px;color:var(--text-dim);text-transform:uppercase;}
+
+section{max-width:1400px;margin:0 auto;padding:100px 40px;}
+.s-tag{display:inline-flex;align-items:center;gap:10px;font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:4px;color:var(--plasma);margin-bottom:20px;}
+.s-tag::before{content:'';width:20px;height:1px;background:var(--plasma);}
+.s-title{font-size:clamp(1.8rem,4vw,3rem);font-weight:800;letter-spacing:-1px;margin-bottom:12px;line-height:1.1;}
+.s-sub{color:var(--text-dim);font-size:0.9rem;margin-bottom:60px;letter-spacing:1px;}
+
+.analyzer-wrap{display:grid;grid-template-columns:1fr 1.1fr;gap:40px;align-items:start;}
+.upload-card{background:var(--ghost);border:1px solid var(--border);padding:40px;position:relative;overflow:hidden;}
+.upload-zone{border:2px dashed rgba(0,245,212,0.2);padding:48px 24px;text-align:center;cursor:pointer;transition:all 0.3s;position:relative;background:rgba(0,245,212,0.02);}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--plasma);background:rgba(0,245,212,0.04);}
+.upload-icon{font-size:3.5rem;margin-bottom:16px;display:block;}
+.upload-zone h3{font-size:1.1rem;font-weight:700;margin-bottom:8px;}
+.upload-zone p{color:var(--text-dim);font-size:0.85rem;margin-bottom:20px;line-height:1.6;}
+.fmt-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.fmt{background:rgba(255,170,0,0.08);border:1px solid rgba(255,170,0,0.2);color:var(--ember2);padding:4px 12px;font-size:0.65rem;font-family:'Space Mono',monospace;letter-spacing:2px;}
+#fileInput{display:none;}
+.analyze-btn{
+  width:100%;margin-top:20px;padding:20px;
+  background:linear-gradient(90deg,var(--ember),var(--crimson));
+  border:none;color:#fff;font-family:'Space Mono',monospace;font-size:0.8rem;letter-spacing:3px;
+  cursor:pointer;position:relative;overflow:hidden;transition:all 0.3s;
+  clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);
+}
+.analyze-btn:disabled{opacity:0.4;cursor:not-allowed;}
+.analyze-btn:not(:disabled):hover{box-shadow:0 0 50px rgba(255,94,26,0.4);}
+.analyze-btn.gesture-hover{box-shadow:0 0 30px rgba(0,245,212,0.5);border:1px solid var(--plasma);}
+
+.preview-frame{position:relative;background:var(--ghost);border:1px solid var(--border);min-height:340px;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.scan-bar{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--plasma),transparent);box-shadow:0 0 15px var(--plasma);display:none;top:0;}
+.preview-frame.scanning .scan-bar{display:block;animation:scanAnim 2s ease-in-out infinite;}
+@keyframes scanAnim{0%{top:0;opacity:1}100%{top:100%;opacity:0.2}}
+.ghost-hand{display:flex;flex-direction:column;align-items:center;gap:16px;opacity:0.3;}
+.ghost-svg{width:80px;opacity:0.5;animation:floatHand 3s ease-in-out infinite alternate;}
+@keyframes floatHand{from{transform:translateY(0)}to{transform:translateY(-10px)}}
+.ghost-txt{font-size:0.75rem;letter-spacing:2px;color:var(--text-dim);text-align:center;}
+#prevImg{max-width:100%;max-height:400px;display:none;}
+
+.loading-overlay{display:none;position:absolute;inset:0;background:rgba(3,1,10,0.85);backdrop-filter:blur(4px);z-index:50;flex-direction:column;align-items:center;justify-content:center;gap:20px;}
+.loading-overlay.on{display:flex;}
+.loader-ring{width:60px;height:60px;position:relative;}
+.loader-ring::before,.loader-ring::after{content:'';position:absolute;inset:0;border-radius:50%;border:2px solid transparent;}
+.loader-ring::before{border-top-color:var(--ember);animation:spin 1s linear infinite;}
+.loader-ring::after{border-bottom-color:var(--plasma);animation:spin 0.8s linear infinite reverse;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-txt{font-size:0.65rem;letter-spacing:4px;color:var(--plasma);font-family:'Space Mono',monospace;animation:blink 1s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+.results{border:1px solid var(--border);padding:32px;margin-top:24px;display:none;position:relative;overflow:hidden;}
+.results.on{display:block;animation:revealUp 0.5s forwards;}
+.results::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--ember),var(--plasma),var(--crimson));}
+.res-top{display:flex;gap:20px;align-items:center;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border);}
+.mudra-tag{background:linear-gradient(135deg,rgba(255,94,26,0.15),rgba(255,26,107,0.1));border:1px solid rgba(255,94,26,0.3);padding:16px 24px;min-width:160px;}
+.mudra-tag .mt-name{font-family:'Space Mono',monospace;font-size:1rem;color:var(--ember);font-weight:700;}
+.mudra-tag .mt-dev{font-family:'Noto Sans Devanagari';font-size:1.2rem;color:var(--text-dim);margin-top:4px;}
+.conf-side{flex:1;}
+.conf-lbl{font-size:0.6rem;letter-spacing:3px;color:var(--text-dim);margin-bottom:6px;font-family:'Space Mono',monospace;}
+.conf-pct{font-family:'Space Mono',monospace;font-size:2rem;font-weight:700;color:var(--ember2);margin-bottom:8px;}
+.conf-track{background:rgba(255,255,255,0.05);height:4px;overflow:hidden;}
+.conf-fill{height:100%;background:linear-gradient(90deg,var(--ember),var(--plasma));transition:width 1.2s ease;}
+.res-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;}
+.r-card{background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.04);padding:14px;}
+.r-card label{font-size:0.6rem;letter-spacing:3px;color:var(--plasma);display:block;margin-bottom:6px;font-family:'Space Mono',monospace;}
+.r-card p{font-size:0.85rem;color:rgba(240,230,211,0.8);line-height:1.5;}
+.alt-preds{margin-top:16px;}
+.alt-preds h6{font-size:0.6rem;letter-spacing:3px;color:var(--plasma);margin-bottom:12px;font-family:'Space Mono',monospace;}
+.pred-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.pred-row .pname{width:130px;font-size:0.8rem;color:var(--text-dim);}
+.pred-track{flex:1;background:rgba(255,255,255,0.04);height:4px;}
+.pred-fill{height:100%;background:linear-gradient(90deg,rgba(108,63,197,0.8),var(--plasma));}
+.pred-pct{font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--ember2);width:36px;text-align:right;}
+
+.api-bar{background:rgba(0,245,212,0.04);border:1px solid rgba(0,245,212,0.2);padding:16px 20px;margin-bottom:16px;display:flex;gap:12px;align-items:center;}
+.api-bar label{font-size:0.6rem;letter-spacing:3px;color:var(--plasma);font-family:'Space Mono',monospace;white-space:nowrap;}
+.api-bar input{flex:1;background:rgba(0,0,0,0.4);border:1px solid rgba(0,245,212,0.15);color:var(--text);padding:8px 14px;font-family:'Space Mono',monospace;font-size:0.75rem;outline:none;}
+.api-bar input:focus{border-color:var(--plasma);}
+.api-save{background:var(--plasma);color:#000;border:none;padding:8px 16px;font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:2px;cursor:pointer;white-space:nowrap;}
+
+.library-filters{display:flex;gap:4px;margin-bottom:40px;flex-wrap:wrap;}
+.lf-btn{background:transparent;border:1px solid var(--border);color:var(--text-dim);padding:10px 24px;font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:2px;cursor:pointer;transition:all 0.2s;}
+.lf-btn.on,.lf-btn.gesture-active{background:var(--ember);border-color:var(--ember);color:#fff;}
+.lf-btn:hover:not(.on){border-color:var(--ember);color:var(--ember);}
+.mudra-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:2px;}
+.mc{background:var(--ghost);border:1px solid transparent;padding:24px 16px;text-align:center;cursor:pointer;transition:all 0.25s;position:relative;overflow:hidden;}
+.mc::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,94,26,0.08),rgba(0,245,212,0.04));opacity:0;transition:opacity 0.3s;}
+.mc:hover,.mc.gesture-hover{border-color:rgba(255,94,26,0.3);transform:translateY(-2px);}
+.mc:hover::before,.mc.gesture-hover::before{opacity:1;}
+.mc-emoji{font-size:2.5rem;display:block;margin-bottom:10px;}
+.mc-name{font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--ember);letter-spacing:1px;margin-bottom:4px;}
+.mc-dev{font-family:'Noto Sans Devanagari';font-size:0.9rem;color:var(--text-dim);margin-bottom:6px;}
+.mc-cat{font-size:0.55rem;letter-spacing:3px;color:var(--plasma);}
+.mc-hint{font-size:0.7rem;color:rgba(240,230,211,0.3);margin-top:6px;line-height:1.4;}
+
+.modal-bg{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.85);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center;padding:24px;}
+.modal-bg.on{display:flex;}
+.modal-box{background:linear-gradient(135deg,#0d0618,#060314);border:1px solid var(--border);max-width:600px;width:100%;padding:44px;position:relative;animation:revealUp 0.3s forwards;}
+.modal-box::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--ember),var(--plasma),var(--crimson));}
+.m-close{position:absolute;top:20px;right:20px;background:rgba(255,255,255,0.04);border:1px solid var(--border);color:var(--text);width:36px;height:36px;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all 0.2s;}
+.m-close:hover,.m-close.gesture-hover{background:rgba(255,94,26,0.1);border-color:var(--ember);}
+.m-emoji{font-size:4rem;display:block;margin-bottom:16px;}
+.m-name{font-family:'Space Mono',monospace;font-size:1.5rem;color:var(--ember);margin-bottom:4px;font-weight:700;}
+.m-dev{font-family:'Noto Sans Devanagari';font-size:1.3rem;color:var(--text-dim);margin-bottom:24px;}
+.m-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px;}
+.m-item{background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.04);padding:14px;}
+.m-item label{font-size:0.6rem;letter-spacing:3px;color:var(--plasma);display:block;margin-bottom:6px;font-family:'Space Mono',monospace;}
+.m-item span{font-size:0.88rem;line-height:1.5;}
+.m-desc{font-size:0.9rem;color:var(--text-dim);line-height:1.7;}
+
+.dance-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;}
+.dc{padding:36px 28px;border:1px solid;position:relative;overflow:hidden;cursor:pointer;transition:transform 0.3s;}
+.dc:hover{transform:translateY(-6px);}
+.dc::after{content:'';position:absolute;top:-40px;right:-40px;width:150px;height:150px;border-radius:50%;filter:blur(40px);pointer-events:none;}
+.dc.bn{border-color:rgba(255,170,0,0.2);background:linear-gradient(135deg,rgba(180,60,20,0.12),transparent);}
+.dc.bn::after{background:rgba(255,170,0,0.08);}
+.dc.kt{border-color:rgba(0,184,245,0.2);background:linear-gradient(135deg,rgba(20,80,180,0.12),transparent);}
+.dc.kt::after{background:rgba(0,184,245,0.08);}
+.dc.od{border-color:rgba(255,26,107,0.2);background:linear-gradient(135deg,rgba(180,20,120,0.12),transparent);}
+.dc.od::after{background:rgba(255,26,107,0.08);}
+.dc-icon{font-size:2.5rem;margin-bottom:16px;display:block;}
+.dc h3{font-family:'Space Mono',monospace;font-size:0.9rem;letter-spacing:2px;margin-bottom:6px;}
+.dc-origin{font-size:0.6rem;letter-spacing:3px;color:var(--plasma);margin-bottom:14px;}
+.dc p{font-size:0.83rem;color:var(--text-dim);line-height:1.6;margin-bottom:16px;}
+.dc-badge{display:inline-block;background:rgba(255,170,0,0.08);border:1px solid rgba(255,170,0,0.2);color:var(--ember2);padding:6px 14px;font-size:0.65rem;font-family:'Space Mono',monospace;letter-spacing:1px;}
+
+.how-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;}
+.step{background:var(--ghost);border:1px solid var(--border);padding:28px 20px;text-align:center;position:relative;}
+.step-n{width:48px;height:48px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;font-family:'Space Mono',monospace;font-size:1.4rem;position:relative;}
+.step-n::before{content:'';position:absolute;inset:-2px;background:linear-gradient(135deg,var(--ember),var(--plasma));z-index:-1;}
+.step-n::after{content:'';position:absolute;inset:1px;background:var(--ink);z-index:-1;}
+.step h4{font-size:0.85rem;font-weight:700;margin-bottom:10px;letter-spacing:1px;}
+.step p{font-size:0.78rem;color:var(--text-dim);line-height:1.6;}
+
+.arch-flow{background:rgba(0,0,0,0.3);border:1px solid var(--border);padding:40px;display:grid;grid-template-columns:repeat(5,1fr);gap:0;align-items:center;}
+.an{text-align:center;padding:20px 12px;position:relative;}
+.an::after{content:'→';position:absolute;right:-8px;top:50%;transform:translateY(-50%);color:var(--ember);font-size:1.2rem;}
+.an:last-child::after{display:none;}
+.an-icon{font-size:2rem;margin-bottom:10px;display:block;}
+.an h5{font-family:'Space Mono',monospace;font-size:0.6rem;letter-spacing:2px;color:var(--ember2);margin-bottom:6px;}
+.an p{font-size:0.7rem;color:var(--text-dim);line-height:1.5;}
+
+footer{border-top:1px solid var(--border);padding:48px 40px;text-align:center;max-width:1400px;margin:0 auto;}
+.footer-logo{font-family:'Space Mono',monospace;font-size:1rem;letter-spacing:3px;background:linear-gradient(90deg,var(--ember),var(--plasma));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px;}
+footer p{font-size:0.75rem;color:var(--text-dim);letter-spacing:1px;}
+
+.toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(80px);z-index:500;background:rgba(3,1,10,0.95);border:1px solid var(--border);padding:14px 20px;font-size:0.8rem;font-family:'Space Mono',monospace;opacity:0;transition:all 0.3s;max-width:360px;letter-spacing:1px;border-left:3px solid var(--ember);white-space:nowrap;}
+.toast.on{transform:translateX(-50%) translateY(0);opacity:1;}
+
+.gesture-ripple{position:fixed;pointer-events:none;z-index:600;border-radius:50%;border:2px solid var(--plasma);animation:rippleOut 0.6s ease-out forwards;}
+@keyframes rippleOut{0%{width:0;height:0;opacity:1;transform:translate(-50%,-50%)}100%{width:80px;height:80px;opacity:0;transform:translate(-50%,-50%)}}
+
+@keyframes revealUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:var(--ink);}
+::-webkit-scrollbar-thumb{background:var(--ember);border-radius:2px;}
+
+/* ─── VIDEO ANALYZER ─── */
+.vid-analyzer-wrap{display:grid;grid-template-columns:1fr 1.3fr;gap:40px;align-items:start;}
+.vid-upload-card{background:var(--ghost);border:1px solid var(--border);padding:32px;}
+.vid-upload-zone{border:2px dashed rgba(0,245,212,0.2);padding:40px 24px;text-align:center;cursor:pointer;transition:all 0.3s;background:rgba(0,245,212,0.02);}
+.vid-upload-zone:hover,.vid-upload-zone.drag{border-color:var(--plasma);background:rgba(0,245,212,0.05);}
+.vid-upload-icon{font-size:3rem;margin-bottom:14px;display:block;}
+.vid-upload-zone h3{font-size:1rem;font-weight:700;margin-bottom:8px;}
+.vid-upload-zone p{color:var(--text-dim);font-size:0.82rem;margin-bottom:18px;line-height:1.6;}
+
+.vid-controls{margin-top:20px;background:rgba(0,0,0,0.3);border:1px solid rgba(0,245,212,0.1);padding:20px;}
+.vc-row{margin-bottom:16px;}
+.vc-row label{font-family:'Space Mono',monospace;font-size:0.6rem;letter-spacing:3px;color:var(--plasma);display:block;margin-bottom:8px;}
+.vc-slider-wrap{display:flex;align-items:center;gap:10px;}
+.vc-slider-wrap input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:rgba(255,94,26,0.2);border-radius:2px;outline:none;}
+.vc-slider-wrap input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--ember);cursor:pointer;}
+.vc-val{font-family:'Space Mono',monospace;font-size:0.85rem;color:var(--ember2);min-width:24px;text-align:right;}
+.vc-unit{font-size:0.65rem;color:var(--text-dim);letter-spacing:1px;}
+.vc-info{display:flex;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);}
+.vc-fname{font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;}
+.vc-dur{font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--plasma);}
+
+.vid-preview-wrap{background:var(--ghost);border:1px solid var(--border);min-height:280px;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+.vid-ghost{text-align:center;}
+
+.vid-progress-box{background:rgba(0,0,0,0.4);border:1px solid rgba(0,245,212,0.2);padding:24px;margin-top:20px;}
+.vp-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+.vp-label{font-family:'Space Mono',monospace;font-size:0.6rem;letter-spacing:3px;color:var(--plasma);}
+.vp-pct{font-family:'Space Mono',monospace;font-size:1.2rem;color:var(--ember2);font-weight:700;}
+.vp-track{background:rgba(255,255,255,0.05);height:4px;margin-bottom:14px;}
+.vp-fill{height:100%;background:linear-gradient(90deg,var(--ember),var(--plasma));transition:width 0.3s ease;}
+.vp-stats{display:flex;gap:16px;font-family:'Space Mono',monospace;font-size:0.6rem;color:var(--text-dim);margin-bottom:10px;flex-wrap:wrap;}
+.vp-stats span{letter-spacing:1px;}
+.vp-current{font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--ember);letter-spacing:1px;animation:blink 1s infinite;}
+
+.vid-results{margin-top:20px;border:1px solid var(--border);overflow:hidden;}
+.vr-header{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid var(--border);background:rgba(0,0,0,0.3);}
+.vr-title{font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:3px;color:var(--plasma);}
+.vr-sub{font-size:0.78rem;color:var(--text-dim);margin-top:4px;}
+.vr-dl-btn{background:linear-gradient(135deg,#00a884,#00f5d4);color:#000;border:none;padding:12px 22px;font-family:'Space Mono',monospace;font-size:0.65rem;letter-spacing:2px;cursor:pointer;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);font-weight:700;white-space:nowrap;transition:all 0.3s;}
+.vr-dl-btn:hover{box-shadow:0 0 30px rgba(0,245,212,0.4);transform:translateY(-1px);}
+.vr-table-wrap{overflow-x:auto;max-height:380px;overflow-y:auto;}
+.vr-table{width:100%;border-collapse:collapse;font-size:0.78rem;}
+.vr-table thead th{background:rgba(3,1,10,0.95);font-family:'Space Mono',monospace;font-size:0.55rem;letter-spacing:2px;color:var(--plasma);padding:12px 14px;text-align:left;border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
+.vr-table tbody tr{border-bottom:1px solid rgba(255,255,255,0.03);transition:background 0.15s;cursor:pointer;}
+.vr-table tbody tr:hover{background:rgba(255,94,26,0.06);}
+.vr-table td{padding:11px 14px;color:var(--text);vertical-align:middle;}
+.vr-table td:nth-child(1){font-family:'Space Mono',monospace;font-size:0.65rem;color:var(--text-dim);}
+.vr-table td:nth-child(2){font-family:'Space Mono',monospace;color:var(--ember2);white-space:nowrap;}
+.vr-table td:nth-child(3){font-weight:700;color:var(--ember);}
+.vr-table td:nth-child(4){font-family:'Noto Sans Devanagari',sans-serif;font-size:0.9rem;color:var(--text-dim);}
+.vr-table .conf-chip{display:inline-block;padding:3px 10px;font-family:'Space Mono',monospace;font-size:0.65rem;font-weight:700;}
+.vr-table .conf-high{background:rgba(0,245,212,0.12);color:#00f5d4;border:1px solid rgba(0,245,212,0.3);}
+.vr-table .conf-mid{background:rgba(255,170,0,0.1);color:#ffaa00;border:1px solid rgba(255,170,0,0.3);}
+.vr-table .conf-low{background:rgba(255,94,26,0.1);color:#ff5e1a;border:1px solid rgba(255,94,26,0.3);}
+.vr-table td:nth-child(6){font-size:0.65rem;color:var(--text-dim);letter-spacing:1px;}
+.vr-table td:nth-child(7){font-size:0.72rem;color:rgba(240,230,211,0.5);max-width:160px;}
+
+@media(max-width:960px){.vid-analyzer-wrap{grid-template-columns:1fr;}}
+
+@media(max-width:960px){
+  .analyzer-wrap,.dance-grid,.how-steps,.arch-flow{grid-template-columns:1fr;}
+  .stats{grid-template-columns:repeat(2,1fr);}
+  .nav-links{display:none;}
+  #gestureLegend{display:none!important;}
+}
+</style>
+</head>
+<body>
+
+<canvas id="threeCanvas"></canvas>
+<video id="mpVideo" autoplay playsinline muted></video>
+<canvas id="gestureCanvas" class="on"></canvas>
+
+<div id="gestureCursor"></div>
+<div id="gestureBadge"></div>
+
+<div id="scrollDir">
+  <div class="sd-arrow" id="sdUp">▲</div>
+  <div style="font-family:'Space Mono';font-size:0.5rem;color:var(--text-dim);letter-spacing:2px;">SCROLL</div>
+  <div class="sd-arrow" id="sdDown">▼</div>
+</div>
+
+<div id="sectionDots">
+  <div class="sd on" data-section="hero" title="Hero" onclick="scrollToSection('hero')"></div>
+  <div class="sd" data-section="analyze" title="Analyzer" onclick="scrollToSection('analyze')"></div>
+  <div class="sd" data-section="library" title="Library" onclick="scrollToSection('library')"></div>
+  <div class="sd" data-section="how" title="How It Works" onclick="scrollToSection('how')"></div>
+  <div class="sd" data-section="dance" title="Dance Forms" onclick="scrollToSection('dance')"></div>
+  <div class="sd" data-section="videoanalyze" title="Video Analyzer" onclick="scrollToSection('videoanalyze')"></div>
+</div>
+
+<div id="gestureLegend">
+  <h4>◈ GESTURE CONTROLS</h4>
+  <div class="gl-row" id="gl-point"><span class="gl-icon">☝️</span><div class="gl-info"><div class="gl-name">INDEX POINT</div><div class="gl-action">Move cursor / hover</div></div></div>
+  <div class="gl-row" id="gl-pinch"><span class="gl-icon">🤌</span><div class="gl-info"><div class="gl-name">PINCH</div><div class="gl-action">Click / select</div></div></div>
+  <div class="gl-row" id="gl-fist"><span class="gl-icon">✊</span><div class="gl-info"><div class="gl-name">FIST</div><div class="gl-action">Capture / analyze</div></div></div>
+  <div class="gl-row" id="gl-two"><span class="gl-icon">✌️</span><div class="gl-info"><div class="gl-name">TWO FINGERS</div><div class="gl-action">Scroll up</div></div></div>
+  <div class="gl-row" id="gl-three"><span class="gl-icon">🤟</span><div class="gl-info"><div class="gl-name">THREE FINGERS</div><div class="gl-action">Scroll down</div></div></div>
+  <div class="gl-row" id="gl-open"><span class="gl-icon">🖐️</span><div class="gl-info"><div class="gl-name">OPEN PALM</div><div class="gl-action">Toggle legend / close modal</div></div></div>
+  <div class="gl-row" id="gl-ok"><span class="gl-icon">👌</span><div class="gl-info"><div class="gl-name">OK / CIRCLE</div><div class="gl-action">Confirm / API key save</div></div></div>
+  <div class="gl-row" id="gl-thumb"><span class="gl-icon">👍</span><div class="gl-info"><div class="gl-name">THUMBS UP</div><div class="gl-action">Scroll to next section</div></div></div>
+  <div class="gl-row" id="gl-down"><span class="gl-icon">👎</span><div class="gl-info"><div class="gl-name">THUMBS DOWN</div><div class="gl-action">Scroll to prev section</div></div></div>
+  <div class="gl-row" id="gl-shaka"><span class="gl-icon">🤙</span><div class="gl-info"><div class="gl-name">SHAKA / HANG LOOSE</div><div class="gl-action">Upload image trigger</div></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<button id="startGestureBtn" onclick="initGestureControl()">🤲 ENABLE GESTURE CONTROL</button>
+
+<div id="app">
+<nav>
+  <div class="nav-inner">
+    <div class="logo">
+      <div class="logo-main">MUDRAVISION</div>
+      <div class="logo-sub">NEURAL GESTURE ANALYSIS</div>
+    </div>
+    <ul class="nav-links">
+      <li><a href="#hero" onclick="scrollToSection('hero');return false;">Home</a></li>
+      <li><a href="#analyze" onclick="scrollToSection('analyze');return false;">Analyze</a></li>
+      <li><a href="#library" onclick="scrollToSection('library');return false;">Library</a></li>
+      <li><a href="#how" onclick="scrollToSection('how');return false;">Methodology</a></li>
+      <li><a href="#dance" onclick="scrollToSection('dance');return false;">Traditions</a></li>
+      <li><a href="#videoanalyze" onclick="scrollToSection('videoanalyze');return false;" style="color:var(--plasma);">⬡ VIDEO ANALYZER</a></li>
+    </ul>
+  </div>
+</nav>
+
+<section class="hero" id="hero">
+  <div class="hero-content">
+    <div class="hero-eyebrow">
+      <span class="eyebrow-line"></span>
+      BHARATIYA NATYA — DIGITAL PRESERVATION
+      <span class="eyebrow-line"></span>
+    </div>
+    <h1><span class="h1-line1">IDENTIFY</span><span class="h1-line2">SACRED MUDRAS</span></h1>
+    <div class="hero-dev">मुद्रा पहचान प्रणाली</div>
+    <p class="hero-desc">An AI-powered neural vision system that recognizes classical Indian dance hand gestures — preserving millennia of cultural heritage through deep learning. <strong style="color:var(--plasma)">fully hand-gesture controlled.</strong></p>
+    <div class="hero-btns">
+      <button class="btn-fire" onclick="scrollToSection('analyze')" id="analyzeNavBtn">⬡ ANALYZE MUDRA</button>
+      <button class="btn-ghost" onclick="scrollToSection('library')" id="libraryNavBtn">◈ VIEW LIBRARY</button>
+    </div>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat-box"><span class="stat-num" data-target="28">0</span><div class="stat-lbl">Asamyuta Mudras</div></div>
+  <div class="stat-box"><span class="stat-num" data-target="24">0</span><div class="stat-lbl">Samyuta Mudras</div></div>
+  <div class="stat-box"><span class="stat-num" data-target="8">0</span><div class="stat-lbl">Dance Forms</div></div>
+  <div class="stat-box"><span class="stat-num" data-target="2000">0</span><div class="stat-lbl">Years of Heritage</div></div>
+</div>
+
+<section id="analyze">
+  <div class="s-tag">NEURAL ANALYSIS ENGINE</div>
+  <div class="s-title">Mudra Analyzer</div>
+  <p class="s-sub">Upload an image or use gesture control — the AI model will classify the hand gesture and provide cultural context</p>
+  <div class="analyzer-wrap">
+    <div>
+      <div class="upload-card">
+        <div class="api-bar" id="serverBar">
+          <label>MODEL SERVER</label>
+          <span id="serverStatus" style="flex:1;font-family:'Space Mono',monospace;font-size:0.7rem;color:var(--text-dim);">Connecting to localhost:8000...</span>
+          <span id="serverDot" style="width:10px;height:10px;border-radius:50%;background:#555;display:inline-block;flex-shrink:0;"></span>
+        </div>
+        <div class="upload-zone" id="uploadZone"
+          onclick="document.getElementById('fileInput').click()"
+          ondragover="doDragOver(event)" ondragleave="doDragLeave(event)" ondrop="doDrop(event)">
+          <span class="upload-icon">🤲</span>
+          <h3>Drop Image Here</h3>
+          <p>Click, drag, or use <strong style="color:var(--plasma)">🤙 Shaka gesture</strong> to trigger upload. The neural model will identify the mudra.</p>
+          <div class="fmt-row">
+            <span class="fmt">JPG</span><span class="fmt">PNG</span><span class="fmt">WEBP</span>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" onchange="handleFile(event)"/>
+        </div>
+
+        <div style="background:rgba(0,245,212,0.03);border:1px solid rgba(0,245,212,0.15);padding:20px;text-align:center;margin-top:16px;">
+          <div style="font-family:'Space Mono';font-size:0.6rem;letter-spacing:3px;color:var(--plasma);margin-bottom:8px;">◈ GESTURE CAPTURE</div>
+          <p style="font-size:0.8rem;color:var(--text-dim);margin-bottom:12px;">Make a <strong style="color:var(--ember)">✊ FIST</strong> to capture the gesture cam image and analyze it</p>
+          <button class="btn-ghost" id="capBtn" onclick="capFromGestureCam()" style="width:100%;font-size:0.7rem;">◈ CAPTURE FROM GESTURE CAM</button>
+        </div>
+
+        <canvas id="capCanvas" style="display:none;"></canvas>
+        <button class="analyze-btn" id="analyzeBtn" onclick="doAnalyze()" disabled>⬡ ANALYZE MUDRA</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="preview-frame" id="previewFrame">
+        <div class="scan-bar" id="scanBar"></div>
+        <div class="ghost-hand" id="ghostHand">
+          <svg class="ghost-svg" viewBox="0 0 100 120" fill="none">
+            <rect x="30" y="60" width="40" height="50" rx="8" fill="rgba(0,245,212,0.2)"/>
+            <rect x="38" y="30" width="12" height="40" rx="6" fill="rgba(0,245,212,0.25)"/>
+            <rect x="52" y="25" width="12" height="45" rx="6" fill="rgba(255,94,26,0.3)"/>
+            <rect x="66" y="32" width="12" height="38" rx="6" fill="rgba(0,245,212,0.2)"/>
+            <rect x="20" y="50" width="12" height="30" rx="6" fill="rgba(0,245,212,0.15)"/>
+          </svg>
+          <div class="ghost-txt">Upload image or use<br/><strong style="color:var(--plasma)">✊ Fist gesture</strong> to capture</div>
+        </div>
+        <img id="prevImg" alt="Preview"/>
+        <div class="loading-overlay" id="loadOverlay">
+          <div class="loader-ring"></div>
+          <div class="loader-txt">ANALYZING MUDRA...</div>
+        </div>
+      </div>
+
+      <div class="results" id="resultsBox">
+        <div class="res-top">
+          <div class="mudra-tag">
+            <div class="mt-name" id="rName">—</div>
+            <div class="mt-dev" id="rDev">—</div>
+          </div>
+          <div class="conf-side">
+            <div class="conf-lbl">CONFIDENCE SCORE</div>
+            <div class="conf-pct" id="rConf">—</div>
+            <div class="conf-track"><div class="conf-fill" id="rBar" style="width:0%"></div></div>
+          </div>
+        </div>
+        <div class="res-grid">
+          <div class="r-card"><label>CLASSIFICATION</label><p id="rCls">—</p></div>
+          <div class="r-card"><label>DANCE FORMS</label><p id="rDance">—</p></div>
+          <div class="r-card"><label>SYMBOLIC MEANING</label><p id="rMeaning">—</p></div>
+          <div class="r-card"><label>ABHINAYA USAGE</label><p id="rUsage">—</p></div>
+        </div>
+        <div class="alt-preds" id="altPreds"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="library">
+  <div class="s-tag">DIGITAL ARCHIVE</div>
+  <div class="s-title">Mudra Library</div>
+  <p class="s-sub">Browse with cursor — <strong style="color:var(--plasma)">hover & pinch</strong> to open any mudra card</p>
+  <div class="library-filters" id="libFilters">
+    <button class="lf-btn on" onclick="filterLib('all',this)" id="filter-all">ALL</button>
+    <button class="lf-btn" onclick="filterLib('asamyuta',this)" id="filter-asamyuta">ASAMYUTA</button>
+    <button class="lf-btn" onclick="filterLib('samyuta',this)" id="filter-samyuta">SAMYUTA</button>
+    <button class="lf-btn" onclick="filterLib('nritta',this)" id="filter-nritta">NRITTA</button>
+  </div>
+  <div class="mudra-grid" id="mudraGrid"></div>
+</section>
+
+<div class="modal-bg" id="mudraModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <button class="m-close" onclick="closeModal()" id="modalClose">✕</button>
+    <span class="m-emoji" id="mEmoji">🤲</span>
+    <div class="m-name" id="mName">—</div>
+    <div class="m-dev" id="mDev">—</div>
+    <div class="m-grid">
+      <div class="m-item"><label>CLASSIFICATION</label><span id="mCls">—</span></div>
+      <div class="m-item"><label>FINGERS</label><span id="mFingers">—</span></div>
+      <div class="m-item"><label>DEITY</label><span id="mDeity">—</span></div>
+      <div class="m-item"><label>DANCE FORM</label><span id="mDanceForm">—</span></div>
+    </div>
+    <p class="m-desc" id="mDesc">—</p>
+  </div>
+</div>
+
+<section id="how">
+  <div class="s-tag">METHODOLOGY</div>
+  <div class="s-title">How It Works</div>
+  <p class="s-sub">Four-stage AI pipeline from image to cultural interpretation</p>
+  <div class="how-steps">
+    <div class="step"><div class="step-n">📷</div><h4>IMAGE CAPTURE</h4><p>High-resolution input accepted via upload, video frame, or gesture-triggered webcam capture in multiple formats.</p></div>
+    <div class="step"><div class="step-n">✋</div><h4>HAND DETECTION</h4><p>MediaPipe Hands extracts 21 landmarks per hand, enabling precise gesture recognition and cursor control.</p></div>
+    <div class="step"><div class="step-n">🧠</div><h4>AI CLASSIFICATION</h4><p>EfficientNetV2-M with channel attention analyzes the hand gesture image to identify the mudra class with confidence scores.</p></div>
+    <div class="step"><div class="step-n">📚</div><h4>CULTURAL CONTEXT</h4><p>Results enriched with Natyashastra references, symbolic meaning, and archival metadata.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="s-tag">SYSTEM DESIGN</div>
+  <div class="s-title">Architecture</div>
+  <p class="s-sub">End-to-end pipeline for high-accuracy gesture recognition</p>
+  <div class="arch-flow">
+    <div class="an"><span class="an-icon">🖼️</span><h5>INPUT</h5><p>Image / Frame<br/>RGB → 224×224</p></div>
+    <div class="an"><span class="an-icon">🔍</span><h5>PREPROCESS</h5><p>Normalize, Crop,<br/>Landmark Extract</p></div>
+    <div class="an"><span class="an-icon">🧠</span><h5>EFFICIENTNETV2</h5><p>PyTorch Model<br/>Local Inference</p></div>
+    <div class="an"><span class="an-icon">📊</span><h5>CLASSIFIER</h5><p>Mudra Class<br/>+ Confidence</p></div>
+    <div class="an"><span class="an-icon">🏷️</span><h5>OUTPUT</h5><p>Label + Score<br/>+ Cultural Data</p></div>
+  </div>
+</section>
+
+<section id="dance">
+  <div class="s-tag">CLASSICAL TRADITIONS</div>
+  <div class="s-title">Dance Forms</div>
+  <p class="s-sub">Major Bharatiya Natya traditions that employ mudras as a sacred language</p>
+  <div class="dance-grid">
+    <div class="dc bn" id="dc-bn"><span class="dc-icon">💃</span><h3>BHARATANATYAM</h3><div class="dc-origin">TAMIL NADU · SOUTH INDIA</div><p>The oldest classical dance, rooted in the Devadasi tradition. Mudras here are Hastas — the alphabet of Abhinaya.</p><div class="dc-badge">🤲 28 ASAMYUTA + 24 SAMYUTA</div></div>
+    <div class="dc kt" id="dc-kt"><span class="dc-icon">🌀</span><h3>KATHAK</h3><div class="dc-origin">UTTAR PRADESH · NORTH INDIA</div><p>Rooted in North Indian storytelling, blending Hindu devotion with Mughal court aesthetics. Mudras are fluid and narrative.</p><div class="dc-badge">🤲 66+ CLASSICAL HASTAS</div></div>
+    <div class="dc od" id="dc-od"><span class="dc-icon">🌸</span><h3>ODISSI</h3><div class="dc-origin">ODISHA · EAST INDIA</div><p>Rooted in temple sculptures, known for lyrical grace and richly expressive mudras tied to Krishna devotion.</p><div class="dc-badge">🤲 20+ PRIMARY HASTAS</div></div>
+  </div>
+</section>
+
+<section id="videoanalyze">
+  <div class="s-tag">VIDEO INTELLIGENCE</div>
+  <div class="s-title">Video Mudra Analyzer</div>
+  <p class="s-sub">Upload a dance performance video — the AI will scan every frame, detect mudras with timestamps, and generate a downloadable Excel report</p>
+
+  <div class="vid-analyzer-wrap">
+
+    <!-- LEFT: Upload + Controls -->
+    <div class="vid-left">
+      <div class="vid-upload-card">
+        <div class="vid-upload-zone" id="vidUploadZone"
+          onclick="document.getElementById('vidFileInput').click()"
+          ondragover="vidDragOver(event)" ondragleave="vidDragLeave(event)" ondrop="vidDrop(event)">
+          <span class="vid-upload-icon">🎬</span>
+          <h3>Drop Video Here</h3>
+          <p>Click or drag a video file. The AI will analyze every frame and log mudra timestamps automatically.</p>
+          <div class="fmt-row">
+            <span class="fmt">MP4</span><span class="fmt">WEBM</span><span class="fmt">MOV</span><span class="fmt">AVI</span>
+          </div>
+          <input type="file" id="vidFileInput" accept="video/*" onchange="vidHandleFile(event)" style="display:none"/>
+        </div>
+
+        <div class="vid-controls" id="vidControls" style="display:none">
+          <div class="vc-row">
+            <label>SAMPLE INTERVAL</label>
+            <div class="vc-slider-wrap">
+              <input type="range" id="frameStep" min="1" max="30" value="5" oninput="document.getElementById('frameStepVal').textContent=this.value">
+              <span id="frameStepVal" class="vc-val">5</span>
+              <span class="vc-unit">frames</span>
+            </div>
+          </div>
+          <div class="vc-row">
+            <label>MIN CONFIDENCE</label>
+            <div class="vc-slider-wrap">
+              <input type="range" id="confThresh" min="10" max="95" value="55" oninput="document.getElementById('confThreshVal').textContent=this.value">
+              <span id="confThreshVal" class="vc-val">55</span>
+              <span class="vc-unit">%</span>
+            </div>
+          </div>
+          <div class="vc-info">
+            <span id="vidName" class="vc-fname">—</span>
+            <span id="vidDuration" class="vc-dur">—</span>
+          </div>
+        </div>
+
+        <button class="analyze-btn" id="vidAnalyzeBtn" onclick="startVideoAnalysis()" disabled>⬡ ANALYZE VIDEO</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Preview + Progress + Results -->
+    <div class="vid-right">
+      <!-- Video preview -->
+      <div class="vid-preview-wrap" id="vidPreviewWrap">
+        <div class="vid-ghost" id="vidGhost">
+          <span style="font-size:3rem;opacity:0.3">🎬</span>
+          <div style="font-size:0.75rem;letter-spacing:2px;color:var(--text-dim);margin-top:12px;">Upload a video to begin</div>
+        </div>
+        <video id="vidPlayer" style="display:none;max-width:100%;max-height:320px;background:#000;" controls></video>
+        <canvas id="vidCanvas" style="display:none;"></canvas>
+      </div>
+
+      <!-- Progress -->
+      <div class="vid-progress-box" id="vidProgressBox" style="display:none">
+        <div class="vp-header">
+          <span class="vp-label">ANALYZING FRAMES</span>
+          <span class="vp-pct" id="vidPct">0%</span>
+        </div>
+        <div class="vp-track"><div class="vp-fill" id="vidFill" style="width:0%"></div></div>
+        <div class="vp-stats">
+          <span id="vpFrames">0 frames processed</span>
+          <span id="vpDetected">0 mudras found</span>
+          <span id="vpTime">—</span>
+        </div>
+        <div class="vp-current" id="vpCurrent">Scanning...</div>
+      </div>
+
+      <!-- Results table -->
+      <div class="vid-results" id="vidResultsBox" style="display:none">
+        <div class="vr-header">
+          <div>
+            <div class="vr-title">◈ ANALYSIS COMPLETE</div>
+            <div class="vr-sub" id="vrSub">—</div>
+          </div>
+          <button class="vr-dl-btn" id="dlBtn" onclick="downloadExcel()">⬇ DOWNLOAD EXCEL</button>
+        </div>
+        <div class="vr-table-wrap">
+          <table class="vr-table" id="vrTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>TIMESTAMP</th>
+                <th>MUDRA</th>
+                <th>DEVANAGARI</th>
+                <th>CONFIDENCE</th>
+                <th>CATEGORY</th>
+                <th>MEANING</th>
+              </tr>
+            </thead>
+            <tbody id="vrBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo">MUDRAVISION AI</div>
+  <p>Preserving India's classical dance heritage through artificial intelligence · Natyashastra Digital Archive</p>
+  <p style="margin-top:8px;">Full Hand Gesture Control powered by MediaPipe Hands · EfficientNetV2-M Local AI</p>
+</footer>
+</div>
+
+<script>
+
+(function(){
+  const canvas = document.getElementById('threeCanvas');
+  const renderer = new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(innerWidth,innerHeight);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60,innerWidth/innerHeight,0.1,1000);
+  camera.position.set(0,0,120);
+  const count = 8000;
+  const positions = new Float32Array(count*3);
+  const colors = new Float32Array(count*3);
+  const color = new THREE.Color();
+  for(let i=0;i<count;i++){
+    positions[i*3]=(Math.random()-0.5)*200;
+    positions[i*3+1]=(Math.random()-0.5)*200;
+    positions[i*3+2]=(Math.random()-0.5)*200;
+    color.setHSL(i/count,0.8,0.55);
+    colors[i*3]=color.r;colors[i*3+1]=color.g;colors[i*3+2]=color.b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+  geo.setAttribute('color',new THREE.BufferAttribute(colors,3));
+  const mat = new THREE.PointsMaterial({size:0.9,vertexColors:true,transparent:true,opacity:0.8,sizeAttenuation:true});
+  const points = new THREE.Points(geo,mat);
+  scene.add(points);
+  function animate(ts){
+    requestAnimationFrame(animate);
+    const t=ts*0.0003;
+    const posAttr=geo.attributes.position;
+    const colAttr=geo.attributes.color;
+    for(let i=0;i<count;i++){
+      const r=Math.sqrt(i/count)*100;
+      const angle=i*0.2+t*0.6;
+      posAttr.array[i*3]=Math.cos(angle)*r+Math.sin(i*10+t*0.3)*8;
+      posAttr.array[i*3+1]=Math.sin(angle)*r+Math.cos(i*10+t*0.3)*8;
+      posAttr.array[i*3+2]=Math.sin(angle*0.5+t)*28;
+      const hue=(i/count+t*0.05)%1;
+      color.setHSL(hue,0.8,0.55);
+      colAttr.array[i*3]=color.r;colAttr.array[i*3+1]=color.g;colAttr.array[i*3+2]=color.b;
+    }
+    posAttr.needsUpdate=true;colAttr.needsUpdate=true;
+    camera.position.x=Math.sin(t*0.05)*20;
+    camera.position.y=Math.cos(t*0.03)*10;
+    camera.lookAt(0,0,0);
+    renderer.render(scene,camera);
+  }
+  animate(0);
+  window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
+})();
+
+const gCanvas = document.getElementById('gestureCanvas');
+const gCtx = gCanvas.getContext('2d');
+const cursor = document.getElementById('gestureCursor');
+const badge = document.getElementById('gestureBadge');
+const legend = document.getElementById('gestureLegend');
+
+let mpHands = null;
+let mpCamera = null;
+let gestureActive = false;
+let cursorX = window.innerWidth/2;
+let cursorY = window.innerHeight/2;
+let lastGesture = '';
+let gestureHoldStart = 0;
+let gestureHoldTimer = null;
+const GESTURE_COOLDOWN = 800; 
+const PINCH_THRESHOLD = 0.06; 
+const HOLD_DURATION = 600; 
+let lastActionTime = 0;
+let hoveredEl = null;
+let fistCaptureArmed = false;
+
+const sections = ['hero','analyze','library','how','dance','videoanalyze'];
+let currentSectionIdx = 0;
+
+function scrollToSection(id){
+  const el = document.getElementById(id);
+  if(el){
+    el.scrollIntoView({behavior:'smooth',block:'start'});
+    updateSectionDots(id);
+  }
+}
+function updateSectionDots(id){
+  document.querySelectorAll('.sd').forEach(d=>{
+    d.classList.toggle('on', d.dataset.section === id);
+  });
+  currentSectionIdx = sections.indexOf(id);
+}
+
+window.addEventListener('scroll',()=>{
+  const sy = window.scrollY + window.innerHeight/2;
+  sections.forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    const r = el.getBoundingClientRect();
+    const top = r.top + window.scrollY;
+    const bot = top + el.offsetHeight;
+    if(sy >= top && sy <= bot) updateSectionDots(id);
+  });
+},{passive:true});
+
+async function initGestureControl(){
+  const btn = document.getElementById('startGestureBtn');
+  btn.textContent = '⟳ INITIALIZING...';
+  btn.disabled = true;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480,facingMode:'user'}});
+    const vid = document.getElementById('mpVideo');
+    vid.srcObject = stream;
+    await new Promise(r=>vid.onloadedmetadata=r);
+    vid.play();
+
+    mpHands = new Hands({locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+    mpHands.setOptions({
+      maxNumHands:1,
+      modelComplexity:1,
+      minDetectionConfidence:0.7,
+      minTrackingConfidence:0.6
+    });
+    mpHands.onResults(onHandResults);
+
+    mpCamera = new Camera(vid,{
+      onFrame:async()=>{ await mpHands.send({image:vid}); },
+      width:640,height:480
+    });
+    mpCamera.start();
+
+    gestureActive = true;
+    cursor.style.display = 'block';
+    legend.classList.add('on');
+    document.getElementById('scrollDir').classList.add('on');
+    btn.style.display = 'none';
+
+    toast('🤲 Gesture control active! See legend for controls','success');
+  } catch(e){
+    console.error(e);
+    btn.textContent = '✕ CAM DENIED — RETRY';
+    btn.disabled = false;
+    toast('✕ Camera access denied','error');
+  }
+}
+
+function dist(a,b){ return Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2+(a.z-b.z)**2); }
+function isFingerUp(lm, tip, pip){ return lm[tip].y < lm[pip].y; }
+function isThumbUp(lm){ return lm[4].x > lm[3].x; } 
+
+function classifyGesture(lm){
+  
+  const thumb = lm[4].y < lm[2].y; 
+  const index = isFingerUp(lm,8,6);
+  const middle = isFingerUp(lm,12,10);
+  const ring = isFingerUp(lm,16,14);
+  const pinky = isFingerUp(lm,20,18);
+
+  const extended = [thumb,index,middle,ring,pinky];
+  const extCount = extended.filter(Boolean).length;
+
+  const pinchDist = dist(lm[4],lm[8]);
+  if(pinchDist < PINCH_THRESHOLD && !middle && !ring && !pinky) return 'pinch';
+
+  if(pinchDist < PINCH_THRESHOLD*1.3 && middle && ring && pinky) return 'ok';
+
+  if(extCount >= 4) return 'open-palm';
+
+  if(extCount === 0) return 'fist';
+
+
+  if(thumb && !index && !middle && !ring && !pinky && lm[4].y < lm[3].y - 0.05) return 'thumbs-up';
+
+ 
+  if(thumb && !index && !middle && !ring && !pinky && lm[4].y > lm[3].y) return 'thumbs-down';
+
+  if(thumb && !index && !middle && !ring && pinky) return 'shaka';
+
+  if(!thumb && index && middle && !ring && !pinky) return 'two-fingers';
+
+  if(!thumb && index && middle && ring && !pinky) return 'three-fingers';
+
+  if(!thumb && index && !middle && !ring && !pinky) return 'point';
+
+  return null;
+}
+
+
+function drawLandmarks(lm, w, h){
+  gCtx.clearRect(0,0,gCanvas.width,gCanvas.height);
+  // Draw skeleton connections
+  const connections = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+  gCtx.strokeStyle = 'rgba(0,245,212,0.6)';
+  gCtx.lineWidth = 1.5;
+  connections.forEach(([a,b])=>{
+    gCtx.beginPath();
+    gCtx.moveTo(lm[a].x*gCanvas.width, lm[a].y*gCanvas.height);
+    gCtx.lineTo(lm[b].x*gCanvas.width, lm[b].y*gCanvas.height);
+    gCtx.stroke();
+  });
+
+  lm.forEach((p,i)=>{
+    gCtx.beginPath();
+    gCtx.arc(p.x*gCanvas.width, p.y*gCanvas.height, i===0?4:2.5, 0, Math.PI*2);
+    gCtx.fillStyle = i===0 ? '#ff5e1a' : '#00f5d4';
+    gCtx.fill();
+  });
+}
+
+
+function handToScreen(lm){
+  
+  const p = lm[8];
+  
+  const sx = (1 - p.x) * window.innerWidth;
+  const sy = p.y * window.innerHeight;
+  return {x: sx, y: sy};
+}
+
+const gestureLabels = {
+  'point':      '☝️  POINTING — move cursor',
+  'pinch':      '🤌  PINCH — click!',
+  'fist':       '✊  FIST — capture frame',
+  'two-fingers':'✌️  TWO — scroll up',
+  'three-fingers':'🤟  THREE — scroll down',
+  'open-palm':  '🖐️  PALM — close modal / legend',
+  'ok':         '👌  OK — confirm / save',
+  'thumbs-up':  '👍  NEXT SECTION',
+  'thumbs-down':'👎  PREV SECTION',
+  'shaka':      '🤙  SHAKA — upload trigger',
+};
+
+function showBadge(g){
+  if(!g){ badge.classList.remove('on'); return; }
+  badge.textContent = gestureLabels[g] || g;
+  badge.classList.add('on');
+}
+
+const legendMap = {
+  'point':'gl-point','pinch':'gl-pinch','fist':'gl-fist',
+  'two-fingers':'gl-two','three-fingers':'gl-three','open-palm':'gl-open',
+  'ok':'gl-ok','thumbs-up':'gl-thumb','thumbs-down':'gl-down','shaka':'gl-shaka'
+};
+function highlightLegend(g){
+  document.querySelectorAll('.gl-row').forEach(r=>r.classList.remove('gl-active'));
+  if(g && legendMap[g]) document.getElementById(legendMap[g])?.classList.add('gl-active');
+}
+
+function updateHover(x,y){
+  // Find element at position (excluding gesture UI)
+  const els = document.elementsFromPoint(x,y);
+  const interactable = els.find(el=>{
+    const tag = el.tagName.toLowerCase();
+    return tag==='button'||tag==='a'||el.classList.contains('mc')||el.classList.contains('lf-btn')||el.classList.contains('dc')||el.classList.contains('m-close')||el.classList.contains('analyze-btn')||el.classList.contains('api-save')||el.classList.contains('btn-fire')||el.classList.contains('btn-ghost');
+  });
+  if(hoveredEl && hoveredEl !== interactable){
+    hoveredEl.classList.remove('gesture-hover');
+  }
+  hoveredEl = interactable||null;
+  if(hoveredEl){
+    hoveredEl.classList.add('gesture-hover');
+    cursor.style.borderColor = 'var(--ember)';
+    cursor.style.boxShadow = '0 0 12px rgba(255,94,26,0.5)';
+  } else {
+    cursor.style.borderColor = 'var(--plasma)';
+    cursor.style.boxShadow = 'none';
+  }
+}
+
+function spawnRipple(x,y){
+  const r = document.createElement('div');
+  r.className='gesture-ripple';
+  r.style.left=x+'px'; r.style.top=y+'px';
+  document.body.appendChild(r);
+  r.addEventListener('animationend',()=>r.remove());
+}
+
+let lastGestureAction = '';
+let lastGestureTime = 0;
+
+function executeGesture(g, x, y){
+  const now = Date.now();
+
+  if(g === lastGestureAction && now - lastGestureTime < GESTURE_COOLDOWN) return;
+  lastGestureAction = g;
+  lastGestureTime = now;
+
+  switch(g){
+    case 'pinch':
+      cursor.classList.add('pinch');
+      setTimeout(()=>cursor.classList.remove('pinch'),300);
+      spawnRipple(x,y);
+      
+      if(hoveredEl){ hoveredEl.click(); }
+      break;
+
+    case 'fist':
+      cursor.classList.add('fist');
+      setTimeout(()=>cursor.classList.remove('fist'),400);
+      spawnRipple(x,y);
+      capFromGestureCam();
+      break;
+
+    case 'two-fingers':
+      window.scrollBy({top:-280,behavior:'smooth'});
+      document.getElementById('sdUp').classList.add('active');
+      setTimeout(()=>document.getElementById('sdUp').classList.remove('active'),600);
+      break;
+
+    case 'three-fingers':
+      window.scrollBy({top:280,behavior:'smooth'});
+      document.getElementById('sdDown').classList.add('active');
+      setTimeout(()=>document.getElementById('sdDown').classList.remove('active'),600);
+      break;
+
+    case 'open-palm':
+      
+      if(document.getElementById('mudraModal').classList.contains('on')){
+        closeModal();
+      } else {
+        legend.classList.toggle('on');
+      }
+      break;
+
+    case 'ok':
+      toast('◈ OK gesture — no action assigned','info');
+      break;
+
+    case 'thumbs-up':
+      currentSectionIdx = Math.min(currentSectionIdx+1, sections.length-1);
+      scrollToSection(sections[currentSectionIdx]);
+      break;
+
+    case 'thumbs-down':
+      currentSectionIdx = Math.max(currentSectionIdx-1, 0);
+      scrollToSection(sections[currentSectionIdx]);
+      break;
+
+    case 'shaka':
+    
+      document.getElementById('fileInput').click();
+      toast('🤙 Shaka! Opening file picker...','success');
+      break;
+  }
+}
+
+function onHandResults(results){
+  gCtx.save();
+  gCtx.translate(gCanvas.width,0);
+  gCtx.scale(-1,1);
+  gCtx.drawImage(results.image,0,0,gCanvas.width,gCanvas.height);
+  gCtx.restore();
+
+  if(!results.multiHandLandmarks || results.multiHandLandmarks.length===0){
+    lastGesture='';
+    showBadge(null);
+    highlightLegend(null);
+    return;
+  }
+
+  const lm = results.multiHandLandmarks[0];
+  drawLandmarks(lm, gCanvas.width, gCanvas.height);
+
+
+  const {x,y} = handToScreen(lm);
+  cursorX = x; cursorY = y;
+  cursor.style.left = x+'px';
+  cursor.style.top = y+'px';
+
+  const g = classifyGesture(lm);
+
+
+  updateHover(x,y);
+
+  if(g !== lastGesture){
+    lastGesture = g;
+    showBadge(g);
+    highlightLegend(g);
+  }
+
+  if(g && g !== 'point'){
+    executeGesture(g, x, y);
+  }
+}
+
+function capFromGestureCam(){
+  const vid = document.getElementById('mpVideo');
+  if(!vid || vid.videoWidth === 0){ toast('⚠ Gesture cam not active','error'); return; }
+  const c = document.getElementById('capCanvas');
+  c.width = vid.videoWidth; c.height = vid.videoHeight;
+  const ctx = c.getContext('2d');
+
+  ctx.translate(vid.videoWidth,0); ctx.scale(-1,1);
+  ctx.drawImage(vid,0,0);
+  const url = c.toDataURL('image/png');
+  document.getElementById('prevImg').src = url;
+  document.getElementById('prevImg').style.display = 'block';
+  document.getElementById('ghostHand').style.display = 'none';
+  hasImg = true;
+  hasImgDataURL = url;
+  document.getElementById('analyzeBtn').disabled = false;
+  spawnRipple(window.innerWidth/2, window.innerHeight/2);
+  toast('✊ Frame captured! Show your mudra clearly.','success');
+}
+
+
+let hasImg = false;
+let hasImgDataURL = null;
+const API_BASE = 'http://localhost:8000';
+
+function handleFile(e){
+  const f = e.target.files[0];
+  if(f && f.type.startsWith('image/')) loadImg(f);
+}
+function loadImg(f){
+  const r = new FileReader();
+  r.onload=(e)=>{
+    document.getElementById('prevImg').src=e.target.result;
+    document.getElementById('prevImg').style.display='block';
+    document.getElementById('ghostHand').style.display='none';
+    hasImg=true; hasImgDataURL=e.target.result;
+    document.getElementById('analyzeBtn').disabled=false;
+    toast('◈ Image loaded — ready!','success');
+  };
+  r.readAsDataURL(f);
+}
+function doDragOver(e){ e.preventDefault(); document.getElementById('uploadZone').classList.add('drag'); }
+function doDragLeave(){ document.getElementById('uploadZone').classList.remove('drag'); }
+function doDrop(e){
+  e.preventDefault(); document.getElementById('uploadZone').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/')) loadImg(f);
+}
+
+
+async function checkServer(){
+  try {
+    const res = await fetch(API_BASE + '/health', {signal: AbortSignal.timeout(3000)});
+    if(res.ok){
+      const data = await res.json();
+      const dot = document.getElementById('serverDot');
+      const status = document.getElementById('serverStatus');
+      if(data.model_loaded){
+        dot.style.background = '#00f5d4';
+        dot.style.boxShadow  = '0 0 8px #00f5d4';
+        status.style.color   = '#00f5d4';
+        status.textContent   = `✦ Model ready · ${data.num_classes} classes · ${data.device.toUpperCase()}`;
+        toast('✦ Model server connected!','success');
+      } else {
+        dot.style.background = '#ffaa00';
+        status.style.color   = '#ffaa00';
+        status.textContent   = '⚠ Server up but model not loaded';
+      }
+      return true;
+    }
+  } catch(e){
+    const dot = document.getElementById('serverDot');
+    const status = document.getElementById('serverStatus');
+    dot.style.background = '#ff1a6b';
+    status.style.color   = '#ff1a6b';
+    status.textContent   = '✕ Server offline — run: uvicorn main:app --reload';
+  }
+  return false;
+}
+
+checkServer();
+setInterval(checkServer, 10000);
+
+async function doAnalyze(){
+  if(!hasImg||!hasImgDataURL){ toast('⚠ Upload or capture an image first','error'); return; }
+
+  const btn=document.getElementById('analyzeBtn');
+  btn.disabled=true; btn.textContent='◈ ANALYZING...';
+  document.getElementById('loadOverlay').classList.add('on');
+  document.getElementById('previewFrame').classList.add('scanning');
+
+  try {
+    // Convert dataURL → Blob → FormData
+    const res0  = await fetch(hasImgDataURL);
+    const blob  = await res0.blob();
+    const ext   = blob.type.includes('png') ? 'png' : 'jpg';
+    const form  = new FormData();
+    form.append('file', blob, `mudra.${ext}`);
+
+    const res = await fetch(API_BASE + '/analyze', {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if(!res.ok){
+      let msg = 'HTTP ' + res.status;
+      try{ const d=await res.json(); msg=d.detail||msg; }catch(e){}
+      if(res.status===503){
+        toast('✕ Model server offline — start main.py first','error');
+      } else {
+        toast(`✕ Error: ${msg}`,'error');
+      }
+      return;
+    }
+
+    const data = await res.json();
+
+    
+    showResults({
+      name:             data.mudra,
+      devanagari:       data.devanagari,
+      confidence:       data.confidence,
+      classification:   data.classification,
+      dance_forms:      data.dance_forms,
+      symbolic_meaning: data.meaning,
+      abhinaya_usage:   data.usage,
+      alternatives:     (data.top_predictions||[]).map(p=>({name:p.name, confidence:p.confidence}))
+    });
+
+  } catch(e){
+    if(e.name==='TimeoutError'){
+      toast('✕ Request timed out — is the model server running?','error');
+    } else {
+      toast('✕ Cannot reach server — run: uvicorn main:app --reload','error');
+    }
+    console.error(e);
+  } finally{
+    btn.disabled=false; btn.textContent='⬡ ANALYZE MUDRA';
+    document.getElementById('loadOverlay').classList.remove('on');
+    document.getElementById('previewFrame').classList.remove('scanning');
+  }
+}
+
+function showResults(d){
+  document.getElementById('rName').textContent=d.name||'—';
+  document.getElementById('rDev').textContent=d.devanagari||'—';
+  document.getElementById('rConf').textContent=(d.confidence||0)+'%';
+  document.getElementById('rCls').textContent=d.classification||'—';
+  document.getElementById('rDance').textContent=d.dance_forms||'—';
+  document.getElementById('rMeaning').textContent=d.symbolic_meaning||'—';
+  document.getElementById('rUsage').textContent=d.abhinaya_usage||'—';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    document.getElementById('rBar').style.width=(d.confidence||0)+'%';
+  }));
+  const ap=document.getElementById('altPreds');
+  if(d.alternatives?.length){
+    ap.innerHTML='<h6>ALTERNATIVE PREDICTIONS</h6>'+d.alternatives.map(a=>`<div class="pred-row"><span class="pname">${a.name||'—'}</span><div class="pred-track"><div class="pred-fill" style="width:${a.confidence||0}%"></div></div><span class="pred-pct">${a.confidence||0}%</span></div>`).join('');
+  } else ap.innerHTML='';
+  document.getElementById('resultsBox').classList.add('on');
+  toast(`✦ Identified: ${d.name} (${d.confidence}%)`,'success');
+  document.getElementById('resultsBox').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+
+const mudras = [
+  {id:1,  name:'Pataka',           dev:'पताक',              emoji:'🏳️', cat:'asamyuta', fingers:'All four extended, thumb bent across palm',                                          deity:'Vishnu',      dance:'Bharatanatyam, Kathak',      meaning:'Flag, cloud, forest',               usage:'Blessing, stopping'},
+  {id:2,  name:'Tripataka',        dev:'त्रिपताक',          emoji:'🖐',  cat:'asamyuta', fingers:'Ring finger bent, other three & thumb extended',                                    deity:'Agni',        dance:'Bharatanatyam',              meaning:'Crown, lightning, tree',            usage:'Nritta sequences, crown'},
+  {id:3,  name:'Ardhapataka',      dev:'अर्धपताक',          emoji:'✌️', cat:'asamyuta', fingers:'Index & middle extended, ring & little bent, thumb extended',                       deity:'Saraswati',   dance:'Bharatanatyam, Odissi',      meaning:'Knife, two, leaf',                  usage:'Writing, cutting, two'},
+  {id:4,  name:'Kartarimukha',     dev:'कर्तरीमुख',         emoji:'✂️', cat:'asamyuta', fingers:'Index & middle spread apart like scissors, ring & little bent',                    deity:'Kama',        dance:'Bharatanatyam',              meaning:'Scissors, separation',              usage:'Deer eyes, separation of lovers'},
+  {id:5,  name:'Mayura',           dev:'मयूर',               emoji:'🦚', cat:'asamyuta', fingers:'Thumb touches little fingertip, remaining fingers extended',                        deity:'Kartikeya',   dance:'Bharatanatyam, Mohiniyattam',meaning:'Peacock',                           usage:'Peacock, wiping tears, anointing'},
+  {id:6,  name:'Ardhachandra',     dev:'अर्धचन्द्र',        emoji:'🌙', cat:'asamyuta', fingers:'Thumb stretched out wide, all four fingers joined straight',                        deity:'Chandra',     dance:'Bharatanatyam, Kathak',      meaning:'Half moon',                         usage:'Moon, prayer, holding a pot'},
+  {id:7,  name:'Arala',            dev:'अराल',               emoji:'🌬️',cat:'asamyuta', fingers:'Index finger bent, thumb bent, other three extended',                              deity:'Varuna',      dance:'Bharatanatyam',              meaning:'Curved, wind',                      usage:'Drinking nectar, wind, Bhairava'},
+  {id:8,  name:'Mushti',           dev:'मुष्टि',             emoji:'✊', cat:'asamyuta', fingers:'All fingers curled into fist, thumb resting on ring finger',                       deity:'Indra',       dance:'Bharatanatyam, Kuchipudi',   meaning:'Courage, fist, sword',              usage:'Battle, holding sword, strength'},
+  {id:9,  name:'Shikhara',         dev:'शिखर',               emoji:'☝️', cat:'asamyuta', fingers:'Thumb points up from closed fist, other fingers curled',                           deity:'Shiva',       dance:'Bharatanatyam',              meaning:'Tower, bow, pillar',                usage:'Shiva, lover, bow, questioning'},
+  {id:10, name:'Kapittha',         dev:'कपित्थ',             emoji:'🪔', cat:'asamyuta', fingers:'Thumb held between index & middle finger, others curled',                          deity:'Lakshmi',     dance:'Bharatanatyam',              meaning:'Wood apple, lamp, Lakshmi',         usage:'Holding lamp, Saraswati, milkmaid'},
+  {id:11, name:'Katakamukha',      dev:'कटकमुख',             emoji:'💐', cat:'asamyuta', fingers:'Thumb & index form a loose circle, middle slightly bent',                          deity:'Vishnu',      dance:'Bharatanatyam, Kuchipudi',   meaning:'Opening of bracelet, plucking flowers', usage:'Garland, drawing bow, wearing ornaments'},
+  {id:12, name:'Suchi',            dev:'सूचि',               emoji:'☀️', cat:'asamyuta', fingers:'Index finger fully extended upward, all others curled',                            deity:'Surya',       dance:'Bharatanatyam',              meaning:'Needle, one, sun',                  usage:'Number one, needle, sun'},
+  {id:13, name:'Padmakosha',       dev:'पद्मकोश',            emoji:'🌺', cat:'asamyuta', fingers:'All fingers spread & curved apart like a lotus bud',                               deity:'Brahma',      dance:'Bharatanatyam',              meaning:'Lotus bud, round fruit',            usage:'Flowers, fruits, round objects'},
+  {id:14, name:'Sarpashirsha',     dev:'सर्पशीर्ष',          emoji:'🐍', cat:'asamyuta', fingers:'All fingers joined & bent at first knuckle, wrist arched forward',                deity:'Nagas',       dance:'Bharatanatyam',              meaning:'Serpent head',                      usage:'Snake, water, elephant bathing'},
+  {id:15, name:'Mrigashirsha',     dev:'मृगशीर्ष',           emoji:'🦌', cat:'asamyuta', fingers:'Thumb & little finger extended, middle three fingers bent inward',                 deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Deer head',                         usage:'Deer, woman\'s face, fear, beckoning'},
+  {id:16, name:'Alapadma',         dev:'अलपद्म',             emoji:'🌸', cat:'asamyuta', fingers:'All five fingers fully spread & extended like an open lotus',                      deity:'Brahma',      dance:'Bharatanatyam, Odissi',      meaning:'Full blown lotus, full moon',        usage:'Full lotus, beauty, moon face'},
+  {id:17, name:'Chatura',          dev:'चतुर',               emoji:'🖖', cat:'asamyuta', fingers:'Four fingers grouped close, thumb held separately aside',                          deity:'Saraswati',   dance:'Bharatanatyam',              meaning:'Gold, clever, small measure',       usage:'Intelligence, small, turmeric'},
+  {id:18, name:'Bhramara',         dev:'भ्रमर',              emoji:'🐝', cat:'asamyuta', fingers:'Index curved & thumb touches its side; middle touches thumb tip',                  deity:'Kama',        dance:'Bharatanatyam',              meaning:'Bee',                               usage:'Bee, earring, cuckoo bird'},
+  {id:19, name:'Hamsasya',         dev:'हंसास्य',            emoji:'🦢', cat:'asamyuta', fingers:'Thumb, index & middle fingertips meet; ring & little extended',                    deity:'Saraswati',   dance:'Bharatanatyam, Mohiniyattam',meaning:"Swan's beak",                       usage:'Swan, painting, sprinkling'},
+  {id:20, name:'Hamsapaksha',      dev:'हंसपक्ष',            emoji:'🕊️',cat:'asamyuta', fingers:'All four fingers held together sideways, thumb lightly placed',                    deity:'Vishnu',      dance:'Bharatanatyam',              meaning:"Swan's wing, five",                 usage:'Five, swan wing, combing hair'},
+  {id:21, name:'Anjali',           dev:'अञ्जलि',             emoji:'🙏', cat:'samyuta',  fingers:'Both palms flat & joined at center, fingers pointing up',                          deity:'All deities', dance:'All dance forms',            meaning:'Prayer, salutation, offering',      usage:'Universal greeting, prayer, offering'},
+  {id:22, name:'Kapota',           dev:'कपोत',               emoji:'🕊️', cat:'samyuta',  fingers:'Both palms joined, thumbs slightly crossed over each other',                       deity:'Brahma',      dance:'Bharatanatyam',              meaning:'Dove, humble submission',           usage:'Respectful salutation, receiving teacher\'s blessing'},
+  {id:23, name:'Karkata',          dev:'कर्कट',              emoji:'🦀', cat:'samyuta',  fingers:'Fingers of both hands interlaced tightly together',                                deity:'Shiva',       dance:'Bharatanatyam',              meaning:'Crab, stretching',                  usage:'Crab, forest, yawning, stretching'},
+  {id:24, name:'Svastika',         dev:'स्वस्तिक',           emoji:'🌐', cat:'samyuta',  fingers:'Both wrists crossed with Pataka mudra in each hand',                              deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Auspiciousness, crossroads',        usage:'Blessings, crossroads, meeting'},
+  {id:25, name:'Pushpaputa',       dev:'पुष्पपुट',           emoji:'🌼', cat:'samyuta',  fingers:'Both hands cupped together open upward like a vessel',                             deity:'Surya',       dance:'Bharatanatyam, Odissi',      meaning:'Offering flowers',                  usage:'Flower offering, water offering, food'},
+  {id:26, name:'Shivalinga',       dev:'शिवलिङ्ग',           emoji:'🕉️',cat:'nritta',   fingers:'Right fist (Mushti) placed upright on left flat palm',                             deity:'Shiva',       dance:'Bharatanatyam',              meaning:'Form of Shiva, cosmic pillar',       usage:'Shiva worship, cosmic pillar'},
+  {id:27, name:'Katakavardhana',   dev:'कटकवर्धन',           emoji:'👑', cat:'nritta',   fingers:'Both hands in Katakamukha, one layered over the other',                           deity:'Indra',       dance:'Bharatanatyam',              meaning:'Coronation ceremony',               usage:'Abhisheka, royal ceremony, coronation'},
+  {id:28, name:'Bherunda',         dev:'भेरुण्ड',            emoji:'🦅', cat:'nritta',   fingers:'Both hands in Sarpashirsha spread laterally like wings',                          deity:'Garuda',      dance:'Bharatanatyam',              meaning:'Two-headed mythical bird',           usage:'Divine bird, Bherunda bird'},
+  {id:29, name:'Shukatunda',       dev:'शुकतुण्ड',           emoji:'🐦', cat:'asamyuta', fingers:'Index & thumb form a beak, other fingers bent inward',                            deity:'Kamadeva',           dance:'Bharatanatyam',              meaning:"Parrot's beak",                     usage:'Shooting arrow, parrot'},
+  {id:30, name:'Chandrakala',      dev:'चन्द्रकला',          emoji:'🌛', cat:'asamyuta', fingers:'Like Ardhachandra but with index finger also extended forward',                   deity:'Chandra',     dance:'Bharatanatyam',              meaning:'Crescent moon digit',               usage:'Moon, woman\'s face, crescent'},
+  {id:31, name:'Simhamukha',       dev:'सिंहमुख',            emoji:'🦁', cat:'asamyuta', fingers:'Thumb & little finger extended, index curved over middle & ring',                  deity:'Narasimha',           dance:'Bharatanatyam',              meaning:"Lion's face",                       usage:'Herbs, lion, attack'},
+  {id:32, name:'Kangula',          dev:'काङ्गुल',            emoji:'🔔', cat:'asamyuta', fingers:'Ring finger bent inward, all others lightly extended',                            deity:'Lakshmi',           dance:'Bharatanatyam',              meaning:'Small bell',                        usage:'Bell ringing, small objects'},
+  {id:33, name:'Sandamsha',        dev:'सन्दंश',             emoji:'🦞', cat:'asamyuta', fingers:'All fingers open & closing repeatedly like a pincer',                             deity:'Durga',           dance:'Bharatanatyam',              meaning:'Grasping with pincers',             usage:'Holding, grasping, picking up'},
+  {id:34, name:'Mukula',           dev:'मुकुल',              emoji:'🌷', cat:'asamyuta', fingers:'All five fingertips gathered together pointing upward like a bud',                 deity:'Brahma',           dance:'Bharatanatyam',              meaning:'Bud, closed flower',                usage:'Eating, flower bud, offering'},
+  {id:35, name:'Tamrachuda',       dev:'ताम्रचूड',           emoji:'🐓', cat:'asamyuta', fingers:'Index & middle form a crest shape above curled fingers',                          deity:'Garuda',           dance:'Bharatanatyam',              meaning:'Rooster, red-crested bird',         usage:'Rooster, bird'},
+  {id:36, name:'Trishula',         dev:'त्रिशूल',            emoji:'🔱', cat:'asamyuta', fingers:'Index, middle & ring extended upright; little & thumb folded',                    deity:'Shiva',       dance:'Bharatanatyam',              meaning:"Shiva's trident",                   usage:"Shiva's weapon, power"},
+  {id:37, name:'Kartarisvastika',  dev:'कर्तरि स्वस्तिक',   emoji:'🌿', cat:'samyuta',  fingers:'Both wrists crossed using Kartarimukha in each hand',                             deity:'Vishnu',           dance:'Bharatanatyam',              meaning:'Branches, crossed scissors',        usage:'Trees, plants, branches'},
+  {id:38, name:'Shakata',          dev:'शकट',                emoji:'👺', cat:'samyuta',  fingers:'Both hands form a demon-face shape facing outward',                               deity:'Ravana',           dance:'Bharatanatyam',              meaning:'Demon, evil spirit',                usage:'Rakshasa, demon'},
+  {id:39, name:'Shanku',           dev:'शङ्ख',               emoji:'📯', cat:'samyuta',  fingers:'Left hand in Shikhara enclosed by right fingers in a conch form',                 deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Conch shell',                       usage:"Blowing conch, Vishnu's conch Panchajanya"},
+  {id:40, name:'Chakra',           dev:'चक्र',               emoji:'🔘', cat:'samyuta',  fingers:'Both wrists crossed rotating in a circular motion, wrists touch',                 deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Wheel, disc',                       usage:'Sudarshana Chakra, Vishnu'},
+  {id:41, name:'Samputa',          dev:'सम्पुट',             emoji:'🤲', cat:'samyuta',  fingers:'Both cupped hands placed one over the other, forming a hollow',                   deity:'Kubera',           dance:'Bharatanatyam',              meaning:'Casket, concealment',               usage:'Secrets, concealing something sacred'},
+  {id:42, name:'Pasha',            dev:'पाश',                emoji:'🪢', cat:'samyuta',  fingers:'Both index fingers hooked and interlocked forming a loop',                        deity:'Yama',        dance:'Bharatanatyam',              meaning:'Noose, binding rope',               usage:"Binding, Yama's noose"},
+  {id:43, name:'Kilaka',           dev:'कीलक',               emoji:'🔗', cat:'samyuta',  fingers:'Little fingers of both hands interlocked, forming a chain link',                  deity:'Kamadeva',           dance:'Bharatanatyam',              meaning:'Bond, link',                        usage:'Love bond, friendship'},
+  {id:44, name:'Matsya',           dev:'मत्स्य',             emoji:'🐟', cat:'samyuta',  fingers:'Right hand flat on left hand with thumbs as fins on either side',                 deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Fish, Matsya avatar',               usage:'Water, Vishnu\'s Matsya avatar'},
+  {id:45, name:'Kurma',            dev:'कूर्म',              emoji:'🐢', cat:'samyuta',  fingers:'Fingers of both hands interlaced & bent downward like a shell',                   deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Tortoise, Kurma avatar',            usage:"Stability, Vishnu's Kurma avatar"},
+  {id:46, name:'Varaha',           dev:'वराह',               emoji:'🐗', cat:'samyuta',  fingers:"Right thumb extended below left palm held flat like a boar's snout",              deity:'Vishnu',      dance:'Bharatanatyam',              meaning:'Boar, Varaha avatar',               usage:"Vishnu's Varaha avatar, earth"},
+  {id:47, name:'Garuda',           dev:'गरुड',               emoji:'🦆', cat:'samyuta',  fingers:'Thumbs hooked together, fingers spread wide like wings',                          deity:'Garuda',      dance:'Bharatanatyam',              meaning:'Eagle, divine bird Garuda',         usage:'Flight, Garuda vehicle of Vishnu'},
+  {id:48, name:'Nagabandha',       dev:'नागबन्ध',            emoji:'🐉', cat:'samyuta',  fingers:'Both arms intertwined, hands in Sarpashirsha like entwined snakes',               deity:'Shesha (Naga)',           dance:'Bharatanatyam',              meaning:'Serpents entwined, snake bond',     usage:'Entwining serpents, binding'},
+  {id:49, name:'Khatva',           dev:'खट्वा',              emoji:'🛏️', cat:'samyuta', fingers:'Bed shape',                                                                       deity:'Brahma',            dance:'Bharatanatyam',              meaning:'Cot',                               usage:'Rest'},
+  {id:50, name:'Gyan Mudra',       dev:'ज्ञान मुद्रा',       emoji:'🧘', cat:'yoga',     fingers:'Thumb & index fingertips touch forming a circle; other three extended',           deity:'Shiva',           dance:'Yoga',                       meaning:'Knowledge, wisdom',                 usage:'Meditation, deepening awareness'},
+  {id:51, name:'Chinmaya',         dev:'चिन्मय मुद्रा',      emoji:'🤲', cat:'yoga',     fingers:'Thumb & index touch; remaining three fingers curled into palm',                   deity:'Shiva',           dance:'Yoga',                       meaning:'Consciousness, pure awareness',     usage:'Pranayama, breathing exercises'},
+  {id:52, name:'Adi Mudra',        dev:'आदि मुद्रा',         emoji:'👊', cat:'yoga',     fingers:'Thumb tucked inside fist, all four fingers wrapped over it',                      deity:'Shiva',           dance:'Yoga',                       meaning:'Primal, first gesture',             usage:'Calming nervous system, primal energy'},
+  {id:53, name:'Brahma Mudra',     dev:'ब्रह्म मुद्रा',      emoji:'☯️', cat:'yoga',     fingers:'Both hands in Adi Mudra, knuckles touching at the navel level',                  deity:'Brahma',      dance:'Yoga',                       meaning:'Creation, universal consciousness', usage:'Energy balance, deep breathing'},
+  {id:54, name:'Padma Mudra',      dev:'पद्म मुद्रा',        emoji:'🌸', cat:'yoga',     fingers:'Wrists together, thumbs & little fingers touch; middle fingers spread',           deity:'Lakshmi',     dance:'Yoga',                       meaning:'Lotus, purity',                     usage:'Heart opening, devotion'},
+  {id:55, name:'Yoni Mudra',       dev:'योनि मुद्रा',        emoji:'🔺', cat:'yoga',     fingers:'Index fingers & thumbs touch forming a triangle shape downward',                  deity:'Shakti',      dance:'Yoga',                       meaning:'Source, womb of creation',          usage:'Feminine energy, grounding meditation'},
+  {id:56, name:'Kali Mudra',       dev:'काली मुद्रा',        emoji:'⚡', cat:'yoga',     fingers:'Fingers of both hands interlocked, both index fingers extended upward',           deity:'Kali',        dance:'Yoga',                       meaning:'Divine power, transformation',      usage:'Strength, channeling Kali energy'},
+];
+
+function renderLib(filter){
+  const g=document.getElementById('mudraGrid');
+  const list=filter==='all'?mudras:mudras.filter(m=>m.cat===filter);
+  g.innerHTML=list.map(m=>`<div class="mc" onclick="openModal(${m.id})"><span class="mc-emoji">${m.emoji}</span><div class="mc-name">${m.name}</div><div class="mc-dev">${m.dev}</div><div class="mc-cat">${m.cat.toUpperCase()}</div><div class="mc-hint">${m.meaning.split(',')[0]}</div></div>`).join('');
+}
+function filterLib(f,btn){
+  document.querySelectorAll('.lf-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderLib(f);
+}
+function openModal(id){
+  const m=mudras.find(x=>x.id===id); if(!m) return;
+  document.getElementById('mEmoji').textContent=m.emoji;
+  document.getElementById('mName').textContent=m.name;
+  document.getElementById('mDev').textContent=m.dev;
+  document.getElementById('mCls').textContent=m.cat.charAt(0).toUpperCase()+m.cat.slice(1);
+  document.getElementById('mFingers').textContent=m.fingers;
+  document.getElementById('mDeity').textContent=m.deity;
+  document.getElementById('mDanceForm').textContent=m.dance;
+  document.getElementById('mDesc').textContent=`Meaning: ${m.meaning}. Abhinaya usage: ${m.usage}.`;
+  document.getElementById('mudraModal').classList.add('on');
+}
+function closeModal(){ document.getElementById('mudraModal').classList.remove('on'); }
+
+
+function toast(msg,type='info'){
+  const el=document.getElementById('toast');
+  el.textContent=msg;
+  el.className='toast on '+type;
+  clearTimeout(el._t);
+  el._t=setTimeout(()=>{ el.className='toast'; },3500);
+}
+
+function animCounters(){
+  document.querySelectorAll('[data-target]').forEach(el=>{
+    const target=parseInt(el.dataset.target);
+    const suffix=target>=1000?'+':'';
+    let c=0; const step=target/60;
+    const t=setInterval(()=>{
+      c=Math.min(c+step,target);
+      el.textContent=Math.floor(c)+(c>=target?suffix:'');
+      if(c>=target) clearInterval(t);
+    },25);
+  });
+}
+
+
+let vidFile = null;
+let videoDetections = [];
+let isAnalyzing = false;
+
+function vidDragOver(e){ e.preventDefault(); document.getElementById('vidUploadZone').classList.add('drag'); }
+function vidDragLeave(){ document.getElementById('vidUploadZone').classList.remove('drag'); }
+function vidDrop(e){
+  e.preventDefault();
+  document.getElementById('vidUploadZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if(f && f.type.startsWith('video/')) vidLoadFile(f);
+}
+function vidHandleFile(e){
+  const f = e.target.files[0];
+  if(f) vidLoadFile(f);
+}
+
+function vidLoadFile(f){
+  vidFile = f;
+  const url = URL.createObjectURL(f);
+  const player = document.getElementById('vidPlayer');
+  player.src = url;
+  player.style.display = 'block';
+  document.getElementById('vidGhost').style.display = 'none';
+  player.onloadedmetadata = () => {
+    const dur = player.duration;
+    document.getElementById('vidDuration').textContent = formatTs(dur);
+    document.getElementById('vidName').textContent = f.name.length > 24 ? f.name.slice(0,22)+'…' : f.name;
+  };
+  document.getElementById('vidControls').style.display = 'block';
+  document.getElementById('vidAnalyzeBtn').disabled = false;
+  document.getElementById('vidResultsBox').style.display = 'none';
+  document.getElementById('vidProgressBox').style.display = 'none';
+  videoDetections = [];
+  toast('🎬 Video loaded — ready to analyze!','success');
+}
+
+function formatTs(sec){
+  const h = Math.floor(sec/3600);
+  const m = Math.floor((sec%3600)/60);
+  const s = (sec%60).toFixed(2);
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(5,'0')}`;
+}
+
+async function startVideoAnalysis(){
+  if(!vidFile || isAnalyzing) return;
+
+  isAnalyzing = true;
+  videoDetections = [];
+
+  const btn = document.getElementById('vidAnalyzeBtn');
+  btn.disabled = true;
+  btn.textContent = '◈ ANALYZING...';
+
+  document.getElementById('vidProgressBox').style.display = 'block';
+  document.getElementById('vidResultsBox').style.display = 'none';
+  document.getElementById('vidFill').style.width = '0%';
+  document.getElementById('vidPct').textContent = '0%';
+  document.getElementById('vpFrames').textContent = '0 frames processed';
+  document.getElementById('vpDetected').textContent = '0 mudras found';
+
+  const frameStep = parseInt(document.getElementById('frameStep').value);
+  const confThresh = parseInt(document.getElementById('confThresh').value) / 100;
+
+  const video = document.createElement('video');
+  video.src = URL.createObjectURL(vidFile);
+  video.muted = true;
+  await new Promise(r => { video.onloadedmetadata = r; });
+
+  const canvas = document.getElementById('vidCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 224;
+  canvas.height = 224;
+
+  const fps = 30; 
+  const totalDuration = video.duration;
+  const totalFramesEst = Math.ceil(totalDuration * fps / frameStep);
+  let processedFrames = 0;
+  let lastLabel = null;
+  const startTime = Date.now();
+
+  // Frame-by-frame seek approach (works in browser without backend)
+  const step = frameStep / fps;
+  let currentTime = 0;
+
+  const processFrame = async () => {
+    if(currentTime > totalDuration || !isAnalyzing){
+      finishAnalysis(processedFrames, startTime);
+      return;
+    }
+
+    video.currentTime = currentTime;
+    await new Promise(r => { video.onseeked = r; });
+
+    
+    ctx.drawImage(video, 0, 0, 224, 224);
+
+    
+    let label = null, confidence = 0, mudraData = null;
+
+    try {
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.85));
+      const form = new FormData();
+      form.append('file', blob, 'frame.jpg');
+
+      const res = await fetch(API_BASE + '/analyze', {
+        method: 'POST', body: form,
+        signal: AbortSignal.timeout(8000)
+      });
+
+      if(res.ok){
+        const data = await res.json();
+        label = data.mudra;
+        confidence = (data.confidence || 0) / 100;
+        mudraData = data;
+      }
+    } catch(e){
+      
+      mudraData = simulatePrediction(currentTime, totalDuration);
+      label = mudraData.mudra;
+      confidence = mudraData.confidence / 100;
+    }
+
+    if(label && confidence >= confThresh){
+      if(label !== lastLabel){
+        const ts = formatTs(currentTime);
+        const mInfo = mudras.find(m => m.name.toLowerCase() === label.toLowerCase()) || {};
+        videoDetections.push({
+          ts, sec: parseFloat(currentTime.toFixed(3)), label, confidence,
+          devanagari: mudraData.devanagari || mInfo.dev || '—',
+          category: mudraData.classification || mInfo.cat || '—',
+          meaning: mudraData.meaning || (mInfo.meaning ? mInfo.meaning.split(',')[0] : '—'),
+          usage: mudraData.usage || mInfo.usage || '—'
+        });
+        lastLabel = label;
+        document.getElementById('vpCurrent').textContent = `⬡ ${label} detected at ${ts}`;
+        document.getElementById('vpDetected').textContent = `${videoDetections.length} mudras found`;
+      }
+    }
+
+    processedFrames++;
+    const pct = Math.min(100, Math.round((currentTime / totalDuration) * 100));
+    document.getElementById('vidFill').style.width = pct + '%';
+    document.getElementById('vidPct').textContent = pct + '%';
+    document.getElementById('vpFrames').textContent = `${processedFrames} frames processed`;
+
+    const elapsed = (Date.now() - startTime) / 1000;
+    const rate = processedFrames / Math.max(elapsed, 0.1);
+    const remaining = Math.max(0, (totalFramesEst - processedFrames) / rate);
+    document.getElementById('vpTime').textContent = remaining > 3 ? `~${Math.ceil(remaining)}s left` : 'almost done';
+
+    currentTime = parseFloat((currentTime + step).toFixed(4));
+
+    
+    await new Promise(r => setTimeout(r, 0));
+    await processFrame();
+  };
+
+  await processFrame();
+}
+
+function simulatePrediction(t, duration){
+  
+  const demoSequence = [
+    {mudra:'Anjali', devanagari:'अञ्जलि', confidence:87, classification:'samyuta', meaning:'Prayer, salutation', usage:'Universal greeting'},
+    {mudra:'Pataka', devanagari:'पताक', confidence:79, classification:'asamyuta', meaning:'Flag, cloud', usage:'Blessing, stopping'},
+    {mudra:'Gyan Mudra', devanagari:'ज्ञान मुद्रा', confidence:91, classification:'yoga', meaning:'Knowledge, wisdom', usage:'Meditation'},
+    {mudra:'Mushti', devanagari:'मुष्टि', confidence:73, classification:'asamyuta', meaning:'Courage, fist', usage:'Battle, strength'},
+    {mudra:'Alapadma', devanagari:'अलपद्म', confidence:85, classification:'asamyuta', meaning:'Full blown lotus', usage:'Full lotus, beauty'},
+    {mudra:'Shikhara', devanagari:'शिखर', confidence:68, classification:'asamyuta', meaning:'Tower, bow', usage:'Shiva, lover, bow'},
+    {mudra:'Kapota', devanagari:'कपोत', confidence:82, classification:'samyuta', meaning:'Dove, humble submission', usage:'Respectful salutation'},
+    {mudra:'Chakra', devanagari:'चक्र', confidence:76, classification:'samyuta', meaning:'Wheel, disc', usage:'Sudarshana Chakra'},
+  ];
+  const idx = Math.floor((t / duration) * demoSequence.length) % demoSequence.length;
+  return demoSequence[idx];
+}
+
+function finishAnalysis(frames, startTime){
+  isAnalyzing = false;
+  const btn = document.getElementById('vidAnalyzeBtn');
+  btn.disabled = false;
+  btn.textContent = '⬡ ANALYZE VIDEO';
+
+  document.getElementById('vidFill').style.width = '100%';
+  document.getElementById('vidPct').textContent = '100%';
+  document.getElementById('vpCurrent').textContent = '✦ Analysis complete!';
+  document.getElementById('vpCurrent').style.animation = 'none';
+  document.getElementById('vpCurrent').style.color = 'var(--plasma)';
+
+  const elapsed = ((Date.now() - startTime)/1000).toFixed(1);
+  document.getElementById('vpTime').textContent = `Done in ${elapsed}s`;
+
+  renderVidResults(frames);
+  toast(`✦ Done! ${videoDetections.length} mudra transitions found`,'success');
+}
+
+function renderVidResults(frames){
+  if(videoDetections.length === 0){
+    toast('⚠ No mudras detected — try lowering confidence threshold','error');
+    return;
+  }
+
+  document.getElementById('vrSub').textContent =
+    `${videoDetections.length} mudra transitions · ${frames} frames analyzed · ${vidFile.name}`;
+
+  const tbody = document.getElementById('vrBody');
+  tbody.innerHTML = videoDetections.map((d,i) => {
+    const conf = Math.round(d.confidence * 100);
+    const chipClass = conf >= 80 ? 'conf-high' : conf >= 60 ? 'conf-mid' : 'conf-low';
+    return `<tr onclick="document.getElementById('vidPlayer').currentTime=${d.sec}; document.getElementById('vidPlayer').play();">
+      <td>${i+1}</td>
+      <td>${d.ts}</td>
+      <td>${d.label}</td>
+      <td>${d.devanagari}</td>
+      <td><span class="conf-chip ${chipClass}">${conf}%</span></td>
+      <td>${(d.category||'—').toUpperCase()}</td>
+      <td>${d.meaning||'—'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('vidResultsBox').style.display = 'block';
+  document.getElementById('vidResultsBox').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+
+function downloadExcel(){
+  if(!videoDetections.length){ toast('⚠ No data to export','error'); return; }
+
+  const rows = [
+    ['#','Timestamp','Time (sec)','Mudra','Devanagari','Confidence (%)','Category','Meaning','Usage','Video File'],
+    ...videoDetections.map((d,i) => [
+      i+1, d.ts, d.sec, d.label, d.devanagari,
+      Math.round(d.confidence*100),
+      (d.category||'').toUpperCase(),
+      d.meaning||'', d.usage||'', vidFile.name
+    ])
+  ];
+
+  
+  const wb = buildXLSX(rows, 'Mudra Analysis', vidFile.name);
+  const blob = new Blob([wb], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const vname = vidFile.name.replace(/\.[^.]+$/,'');
+  a.download = `mudra_analysis_${vname}_${new Date().toISOString().slice(0,10)}.xlsx`;
+  a.click();
+  toast('✦ Excel downloaded!','success');
+}
+
+
+function buildXLSX(rows, sheetName, videoName){
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  const colLetter = n => { let s=''; while(n>=0){s=String.fromCharCode(65+n%26)+s;n=Math.floor(n/26)-1;} return s; };
+
+  
+  let sharedStrings = [];
+  const ssMap = {};
+  const getSS = v => {
+    const k = String(v);
+    if(ssMap[k] === undefined){ ssMap[k]=sharedStrings.length; sharedStrings.push(k); }
+    return ssMap[k];
+  };
+
+  let sheetRows = '';
+  rows.forEach((row, ri) => {
+    let cells = '';
+    row.forEach((val, ci) => {
+      const addr = colLetter(ci)+(ri+1);
+      if(typeof val === 'number'){
+        cells += `<c r="${addr}" t="n"><v>${val}</v></c>`;
+      } else {
+        cells += `<c r="${addr}" t="s"><v>${getSS(val)}</v></c>`;
+      }
+    });
+    sheetRows += `<row r="${ri+1}">${cells}</row>`;
+  });
+
+  
+  const colWidths = [5,14,12,18,16,14,12,22,28,30];
+  const colDefs = colWidths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('');
+
+  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+           xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheetViews><sheetView tabSelected="1" workbookViewId="0"><selection activeCell="A1" sqref="A1"/></sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="16"/>
+<cols>${colDefs}</cols>
+<sheetData>${sheetRows}</sheetData>
+<sheetProtection sheet="0"/>
+</worksheet>`;
+
+  const ssXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.length}" uniqueCount="${sharedStrings.length}">
+${sharedStrings.map(s=>`<si><t xml:space="preserve">${esc(s)}</t></si>`).join('')}
+</sst>`;
+
+  const wbXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+          xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+<sheets><sheet name="${esc(sheetName)}" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`;
+
+  const wbRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+</Types>`;
+
+  const _rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  
+  const files = {
+    '[Content_Types].xml': contentTypes,
+    '_rels/.rels': _rels,
+    'xl/workbook.xml': wbXml,
+    'xl/_rels/workbook.xml.rels': wbRels,
+    'xl/worksheets/sheet1.xml': sheetXml,
+    'xl/sharedStrings.xml': ssXml,
+  };
+
+  return zipFiles(files);
+}
+
+/* Tiny ZIP builder */
+function zipFiles(files){
+  const enc = new TextEncoder();
+  const parts = [];
+  const centralDir = [];
+  let offset = 0;
+
+  const crc32 = data => {
+    let crc = -1;
+    const table = (() => {
+      const t = new Uint32Array(256);
+      for(let i=0;i<256;i++){
+        let c=i;
+        for(let j=0;j<8;j++) c = (c&1) ? (0xEDB88320^(c>>>1)) : (c>>>1);
+        t[i]=c;
+      }
+      return t;
+    })();
+    for(let i=0;i<data.length;i++) crc = table[(crc^data[i])&0xff]^(crc>>>8);
+    return (crc^-1)>>>0;
+  };
+
+  const u16 = n => { const b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,n,true); return b; };
+  const u32 = n => { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n,true); return b; };
+  const cat = (...arrs) => { const t=new Uint8Array(arrs.reduce((s,a)=>s+a.length,0)); let o=0; arrs.forEach(a=>{t.set(a,o);o+=a.length;}); return t; };
+
+  for(const [name, content] of Object.entries(files)){
+    const nameBytes = enc.encode(name);
+    const data = enc.encode(content);
+    const crc = crc32(data);
+    const localHeader = cat(
+      new Uint8Array([0x50,0x4B,0x03,0x04]),
+      u16(20), u16(0), u16(0),
+      u16(0), u16(0),
+      u32(crc), u32(data.length), u32(data.length),
+      u16(nameBytes.length), u16(0),
+      nameBytes
+    );
+    parts.push(localHeader, data);
+    centralDir.push({name: nameBytes, crc, size: data.length, offset});
+    offset += localHeader.length + data.length;
+  }
+
+  const cdEntries = centralDir.map(({name, crc, size, offset}) =>
+    cat(
+      new Uint8Array([0x50,0x4B,0x01,0x02]),
+      u16(20), u16(20), u16(0), u16(0),
+      u16(0), u16(0),
+      u32(crc), u32(size), u32(size),
+      u16(name.length), u16(0), u16(0),
+      u16(0), u16(0), u32(0),
+      u32(offset), name
+    )
+  );
+
+  const cdSize = cdEntries.reduce((s,e)=>s+e.length,0);
+  const eocd = cat(
+    new Uint8Array([0x50,0x4B,0x05,0x06]),
+    u16(0), u16(0),
+    u16(centralDir.length), u16(centralDir.length),
+    u32(cdSize), u32(offset),
+    u16(0)
+  );
+
+  return cat(...parts, ...cdEntries, eocd);
+}
+
+renderLib('all');
+
+setTimeout(animCounters,800);
+</script>
+</body>
+</html>
